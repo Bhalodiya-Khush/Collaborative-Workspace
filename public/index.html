@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collaborative Workspace</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">CW</span>
+        <h1>Collaborative Workspace</h1>
+      </div>
+      <button id="seedDataBtn" class="primary-btn">Seed Demo Data</button>
+    </header>
+
+    <main class="container">
+      <section class="panel dashboard-card">
+        <h2>System Overview</h2>
+        <div id="dashboard" class="stats-grid"></div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>User Registration</h3>
+          <form id="registerForm">
+            <input type="text" name="fullName" placeholder="Full name" required />
+            <input type="email" name="email" placeholder="Email" required />
+            <input type="password" name="password" placeholder="Password" required />
+            <select name="role">
+              <option value="admin">Admin</option>
+              <option value="project_manager">Project Manager</option>
+              <option value="developer" selected>Developer</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button type="submit" class="primary-btn">Register</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Login</h3>
+          <form id="loginForm">
+            <input type="email" name="email" placeholder="Email" required />
+            <input type="password" name="password" placeholder="Password" required />
+            <button type="submit" class="primary-btn">Login</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>Create Workspace</h3>
+          <form id="workspaceForm">
+            <input type="text" name="name" placeholder="Workspace name" required />
+            <textarea name="description" placeholder="Description"></textarea>
+            <input type="text" name="owner" placeholder="Owner user ID" />
+            <input type="text" name="members" placeholder="Member user IDs (comma separated)" />
+            <button type="submit" class="primary-btn">Create Workspace</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Create Project</h3>
+          <form id="projectForm">
+            <input type="text" name="name" placeholder="Project name" required />
+            <textarea name="description" placeholder="Project description"></textarea>
+            <input type="text" name="workspace" placeholder="Workspace ID" required />
+            <input type="text" name="projectManager" placeholder="Project manager ID" required />
+            <input type="text" name="developers" placeholder="Developer IDs (comma separated)" />
+            <button type="submit" class="primary-btn">Create Project</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>Create Task</h3>
+          <form id="taskForm">
+            <input type="text" name="title" placeholder="Task title" required />
+            <textarea name="description" placeholder="Task description"></textarea>
+            <input type="text" name="project" placeholder="Project ID" required />
+            <input type="text" name="workspace" placeholder="Workspace ID" required />
+            <input type="text" name="assignee" placeholder="Assignee user ID" />
+            <input type="text" name="reporter" placeholder="Reporter user ID" required />
+            <select name="priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+            <button type="submit" class="primary-btn">Create Task</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Project Submission</h3>
+          <form id="submissionForm">
+            <input type="text" name="project" placeholder="Project ID" required />
+            <input type="text" name="task" placeholder="Task ID" required />
+            <input type="text" name="developer" placeholder="Developer ID" required />
+            <input type="text" name="title" placeholder="Submission title" required />
+            <input type="text" name="branchName" placeholder="Branch name" />
+            <textarea name="description" placeholder="Submission notes"></textarea>
+            <button type="submit" class="primary-btn">Submit Code</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel output-panel">
+        <h3>Response Output</h3>
+        <pre id="output">Waiting for API response...</pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
