@@ -1,6 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
+const requireAuth = require('../middleware/auth');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Project = require('../models/Project');
@@ -13,6 +15,12 @@ const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
 
 const router = express.Router();
+
+const createToken = (user) => jwt.sign(
+  { userId: user._id.toString(), role: user.role },
+  process.env.JWT_SECRET,
+  { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+);
 
 const sanitizeUser = (user) => {
   if (!user) return null;
@@ -96,11 +104,16 @@ router.post('/users/login', async (req, res) => {
 
     res.json({
       message: 'Login successful.',
+      token: createToken(user),
       user: sanitizeUser(user),
     });
   } catch (error) {
     res.status(500).json({ message: 'Login failed.', error: error.message });
   }
+});
+
+router.get('/users/me', requireAuth, (req, res) => {
+  res.json({ user: req.user });
 });
 
 router.get('/users', async (req, res) => {
@@ -112,7 +125,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.post('/workspaces', async (req, res) => {
+router.post('/workspaces', requireAuth, async (req, res) => {
   try {
     const { name, description, owner, members = [] } = req.body;
 
@@ -135,7 +148,7 @@ router.post('/workspaces', async (req, res) => {
   }
 });
 
-router.get('/workspaces', async (req, res) => {
+router.get('/workspaces', requireAuth, async (req, res) => {
   try {
     const workspaces = await Workspace.find().populate('owner members projects');
     res.json(workspaces);
@@ -144,7 +157,7 @@ router.get('/workspaces', async (req, res) => {
   }
 });
 
-router.post('/projects', async (req, res) => {
+router.post('/projects', requireAuth, async (req, res) => {
   try {
     const { name, description, workspace, projectManager, developers = [], status, repositoryUrl, defaultBranch } = req.body;
 
@@ -187,7 +200,7 @@ router.post('/projects', async (req, res) => {
   }
 });
 
-router.get('/projects', async (req, res) => {
+router.get('/projects', requireAuth, async (req, res) => {
   try {
     const projects = await Project.find().populate('workspace projectManager developers');
     res.json(projects);
@@ -196,7 +209,7 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-router.post('/tasks', async (req, res) => {
+router.post('/tasks', requireAuth, async (req, res) => {
   try {
     const { title, description, project, workspace, assignee, reporter, priority, status, dueDate, labels, branchName } = req.body;
 
@@ -224,7 +237,7 @@ router.post('/tasks', async (req, res) => {
   }
 });
 
-router.get('/tasks', async (req, res) => {
+router.get('/tasks', requireAuth, async (req, res) => {
   try {
     const tasks = await Task.find().populate('project workspace assignee reporter');
     res.json(tasks);
@@ -233,7 +246,7 @@ router.get('/tasks', async (req, res) => {
   }
 });
 
-router.post('/submissions', async (req, res) => {
+router.post('/submissions', requireAuth, async (req, res) => {
   try {
     const { project, task, developer, title, description, branchName, files = [] } = req.body;
 
@@ -257,7 +270,7 @@ router.post('/submissions', async (req, res) => {
   }
 });
 
-router.get('/submissions', async (req, res) => {
+router.get('/submissions', requireAuth, async (req, res) => {
   try {
     const submissions = await Submission.find().populate('project task developer');
     res.json(submissions);
@@ -266,7 +279,7 @@ router.get('/submissions', async (req, res) => {
   }
 });
 
-router.post('/meetings', async (req, res) => {
+router.post('/meetings', requireAuth, async (req, res) => {
   try {
     const { title, project, workspace, host, attendees = [], scheduledAt, durationMinutes, meetingType, agenda } = req.body;
 
@@ -292,7 +305,7 @@ router.post('/meetings', async (req, res) => {
   }
 });
 
-router.get('/meetings', async (req, res) => {
+router.get('/meetings', requireAuth, async (req, res) => {
   try {
     const meetings = await Meeting.find().populate('project workspace host attendees');
     res.json(meetings);
@@ -301,7 +314,7 @@ router.get('/meetings', async (req, res) => {
   }
 });
 
-router.post('/messages', async (req, res) => {
+router.post('/messages', requireAuth, async (req, res) => {
   try {
     const { workspace, project, sender, receiver, content, messageType, attachments = [] } = req.body;
 
@@ -325,7 +338,7 @@ router.post('/messages', async (req, res) => {
   }
 });
 
-router.get('/messages', async (req, res) => {
+router.get('/messages', requireAuth, async (req, res) => {
   try {
     const messages = await ChatMessage.find().populate('workspace project sender receiver');
     res.json(messages);
@@ -334,7 +347,7 @@ router.get('/messages', async (req, res) => {
   }
 });
 
-router.post('/notifications', async (req, res) => {
+router.post('/notifications', requireAuth, async (req, res) => {
   try {
     const { user, title, message, type, relatedId } = req.body;
 
@@ -349,7 +362,7 @@ router.post('/notifications', async (req, res) => {
   }
 });
 
-router.get('/notifications', async (req, res) => {
+router.get('/notifications', requireAuth, async (req, res) => {
   try {
     const notifications = await Notification.find().populate('user');
     res.json(notifications);

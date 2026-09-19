@@ -1,8 +1,18 @@
 const output = document.getElementById('output');
 const dashboard = document.getElementById('dashboard');
+const authStatus = document.getElementById('authStatus');
+const tokenStorageKey = 'collaborativeWorkspaceToken';
 
 const printOutput = (data) => {
   output.textContent = JSON.stringify(data, null, 2);
+};
+
+const getToken = () => localStorage.getItem(tokenStorageKey);
+
+const updateAuthStatus = (user = null) => {
+  authStatus.textContent = user
+    ? `Logged in: ${user.fullName} (${user.role})`
+    : 'Not logged in';
 };
 
 const renderDashboard = (stats) => {
@@ -27,9 +37,11 @@ const renderDashboard = (stats) => {
 };
 
 const apiRequest = async (endpoint, options = {}) => {
+  const token = getToken();
   const response = await fetch(`/api${endpoint}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
@@ -88,10 +100,18 @@ document.getElementById('loginForm').addEventListener('submit', async (event) =>
       method: 'POST',
       body: JSON.stringify(formData),
     });
+    localStorage.setItem(tokenStorageKey, data.token);
+    updateAuthStatus(data.user);
     printOutput(data);
   } catch (error) {
     printOutput({ error: error.message });
   }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  localStorage.removeItem(tokenStorageKey);
+  updateAuthStatus();
+  printOutput({ message: 'Logged out successfully.' });
 });
 
 document.getElementById('workspaceForm').addEventListener('submit', async (event) => {
@@ -109,6 +129,23 @@ document.getElementById('workspaceForm').addEventListener('submit', async (event
       body: JSON.stringify(payload),
     });
     printOutput(data);
+    const loadCurrentUser = async () => {
+      if (!getToken()) {
+        updateAuthStatus();
+        return;
+      }
+
+      try {
+        const data = await apiRequest('/users/me');
+        updateAuthStatus(data.user);
+      } catch (error) {
+        localStorage.removeItem(tokenStorageKey);
+        updateAuthStatus();
+        printOutput({ error: error.message });
+      }
+    };
+
+    loadCurrentUser();
     fetchDashboard();
   } catch (error) {
     printOutput({ error: error.message });

@@ -105,6 +105,7 @@ The database is built with Mongoose and includes these collections:
 - `config/db.js` - MongoDB connection configuration
 - `models/` - Mongoose schemas
 - `routes/api.js` - API endpoints for users, workspaces, projects, tasks, submissions, meetings, chat and notifications
+- `middleware/auth.js` - JWT verification middleware for protected API routes
 - `public/` - simple HTML/CSS/JS frontend for testing the basic workflow
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
 
@@ -128,6 +129,7 @@ The app will be available at http://localhost:5000
 - GET /api/dashboard
 - POST /api/users/register
 - POST /api/users/login
+- GET /api/users/me (JWT required)
 - GET /api/users
 - POST /api/workspaces
 - GET /api/workspaces
@@ -144,6 +146,28 @@ The app will be available at http://localhost:5000
 - POST /api/notifications
 - GET /api/notifications
 - POST /api/seed
+
+## JWT authentication
+
+Login with `POST /api/users/login` using an email and password. The response contains a JWT token:
+
+```json
+{
+  "token": "your.jwt.token",
+  "user": {
+    "email": "admin@workspace.com",
+    "role": "admin"
+  }
+}
+```
+
+Send that token to protected endpoints in the `Authorization` header:
+
+```text
+Authorization: Bearer your.jwt.token
+```
+
+The simple HTML UI stores the token in browser local storage after login, sends it automatically with protected requests, and provides a logout button. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default).
 
 ## Future next steps
 
