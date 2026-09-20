@@ -107,6 +107,7 @@ The database is built with Mongoose and includes these collections:
 - `routes/api.js` - API endpoints for users, workspaces, projects, tasks, submissions, meetings, chat and notifications
 - `middleware/auth.js` - JWT verification middleware for protected API routes
 - `middleware/roles.js` - role-based authorization middleware
+- `middleware/projectAccess.js` - project membership and project-manager access checks
 - `public/` - simple HTML/CSS/JS frontend for testing the basic workflow
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
 
@@ -137,10 +138,10 @@ The app will be available at http://localhost:5000
 - GET /api/workspaces
 - POST /api/projects
 - GET /api/projects
-- POST /api/tasks
-- GET /api/tasks
-- POST /api/submissions
-- GET /api/submissions
+- POST /api/tasks (project access required)
+- GET /api/tasks (only tasks from accessible projects)
+- POST /api/submissions (developer must belong to the project)
+- GET /api/submissions (only submissions from accessible projects)
 - POST /api/meetings
 - GET /api/meetings
 - POST /api/messages
@@ -179,6 +180,17 @@ Public registration always creates a `developer` account. This prevents users fr
 - `project_manager`: view users, create tasks, schedule meetings, and create notifications
 - `developer`: view assigned data, submit code, schedule meetings, and send messages
 - `viewer`: read-only access to authenticated GET endpoints
+
+## Project-level authorization
+
+Project reads and writes are filtered by membership:
+
+- Admins can access every project.
+- Project managers can access projects where they are the `projectManager`.
+- Developers can access projects where their user ID is in `developers`.
+- Viewers receive no project data until they are explicitly added to a project.
+
+Task, submission, meeting, and project chat operations use the project ID to enforce this check. The API also takes the authenticated user from the JWT as the task reporter, submission developer, meeting host, and message sender instead of trusting those identity fields from the browser.
 
 Protected write operations return `403 Access denied` when the logged-in user does not have the required role.
 

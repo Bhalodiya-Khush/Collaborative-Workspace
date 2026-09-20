@@ -4,6 +4,10 @@ const jwt = require('jsonwebtoken');
 
 const requireAuth = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
+const {
+  projectFilterForUser,
+  requireProjectAccess,
+} = require('../middleware/projectAccess');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Project = require('../models/Project');
@@ -233,19 +237,20 @@ router.post('/projects', requireAuth, allowRoles('admin'), async (req, res) => {
 
 router.get('/projects', requireAuth, async (req, res) => {
   try {
-    const projects = await Project.find().populate('workspace projectManager developers');
+    const projects = await Project.find(projectFilterForUser(req.user))
+      .populate('workspace projectManager developers');
     res.json(projects);
   } catch (error) {
     res.status(500).json({ message: 'Projects could not be loaded.', error: error.message });
   }
 });
 
-router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
+router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), requireProjectAccess, async (req, res) => {
   try {
-    const { title, description, project, workspace, assignee, reporter, priority, status, dueDate, labels, branchName } = req.body;
+    const { title, description, project, workspace, assignee, priority, status, dueDate, labels, branchName } = req.body;
 
-    if (!title || !project || !workspace || !reporter) {
-      return res.status(400).json({ message: 'Task title, project, workspace and reporter are required.' });
+    if (!title || !project || !workspace) {
+      return res.status(400).json({ message: 'Task title, project and workspace are required.' });
     }
 
     const task = await Task.create({
@@ -254,7 +259,7 @@ router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), async
       project,
       workspace,
       assignee,
-      reporter,
+      reporter: req.user._id,
       priority,
       status,
       dueDate,
@@ -270,25 +275,31 @@ router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), async
 
 router.get('/tasks', requireAuth, async (req, res) => {
   try {
-    const tasks = await Task.find().populate('project workspace assignee reporter');
+    const projectFilter = projectFilterForUser(req.user);
+    const accessibleProjects = await Project.find(projectFilter).select('_id');
+    const projectIds = accessibleProjects.map((project) => project._id);
+    const taskFilter = req.query.projectId
+      ? { project: { $in: projectIds, $eq: req.query.projectId } }
+      : { project: { $in: projectIds } };
+    const tasks = await Task.find(taskFilter).populate('project workspace assignee reporter');
     res.json(tasks);
   } catch (error) {
     res.status(500).json({ message: 'Tasks could not be loaded.', error: error.message });
   }
 });
 
-router.post('/submissions', requireAuth, allowRoles('developer'), async (req, res) => {
+router.post('/submissions', requireAuth, allowRoles('developer'), requireProjectAccess, async (req, res) => {
   try {
-    const { project, task, developer, title, description, branchName, files = [] } = req.body;
+    const { project, task, title, description, branchName, files = [] } = req.body;
 
-    if (!project || !task || !developer || !title) {
-      return res.status(400).json({ message: 'Project, task, developer and submission title are required.' });
+    if (!project || !task || !title) {
+      return res.status(400).json({ message: 'Project, task and submission title are required.' });
     }
 
     const submission = await Submission.create({
       project,
       task,
-      developer,
+      developer: req.user._id,
       title,
       description,
       branchName,
@@ -303,26 +314,50 @@ router.post('/submissions', requireAuth, allowRoles('developer'), async (req, re
 
 router.get('/submissions', requireAuth, async (req, res) => {
   try {
-    const submissions = await Submission.find().populate('project task developer');
+    const accessibleProjects = await Project.find(projectFilterForUser(req.user)).select('_id');
+    const projectIds = accessibleProjects.map((project) => project._id);
+    const submissionFilter = req.query.projectId
+      ? { project: { $in: projectIds, $eq: req.query.projectId } }
+      : { project: { $in: projectIds } };
+    const submissions = await Submission.find(submissionFilter).populate('project task developer');
     res.json(submissions);
   } catch (error) {
     res.status(500).json({ message: 'Submissions could not be loaded.', error: error.message });
   }
 });
 
-router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'developer'), async (req, res) => {
+router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'developer'), async (req, res, next) => {
   try {
-    const { title, project, workspace, host, attendees = [], scheduledAt, durationMinutes, meetingType, agenda } = req.body;
+    const { title, project, workspace, attendees = [], scheduledAt, durationMinutes, meetingType, agenda } = req.body;
 
-    if (!title || !workspace || !host || !scheduledAt) {
-      return res.status(400).json({ message: 'Meeting title, workspace, host and schedule time are required.' });
+    if (!title || !workspace || !scheduledAt) {
+      return res.status(400).json({ message: 'Meeting title, workspace and schedule time are required.' });
+    }
+
+    if (project) {
+      req.body.project = project;
+      return requireProjectAccess(req, res, async () => {
+        const meeting = await Meeting.create({
+          title,
+          project,
+          workspace,
+          host: req.user._id,
+          attendees,
+          scheduledAt,
+          durationMinutes,
+          meetingType,
+          agenda,
+        });
+
+        return res.status(201).json({ message: 'Meeting scheduled successfully.', meeting });
+      });
     }
 
     const meeting = await Meeting.create({
       title,
       project,
       workspace,
-      host,
+      host: req.user._id,
       attendees,
       scheduledAt,
       durationMinutes,
@@ -338,7 +373,12 @@ router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'de
 
 router.get('/meetings', requireAuth, async (req, res) => {
   try {
-    const meetings = await Meeting.find().populate('project workspace host attendees');
+    const accessibleProjects = await Project.find(projectFilterForUser(req.user)).select('_id');
+    const projectIds = accessibleProjects.map((project) => project._id);
+    const meetingFilter = req.query.projectId
+      ? { $or: [{ project: { $in: projectIds, $eq: req.query.projectId } }, { project: null }] }
+      : { $or: [{ project: { $in: projectIds } }, { project: null }] };
+    const meetings = await Meeting.find(meetingFilter).populate('project workspace host attendees');
     res.json(meetings);
   } catch (error) {
     res.status(500).json({ message: 'Meetings could not be loaded.', error: error.message });
@@ -347,16 +387,32 @@ router.get('/meetings', requireAuth, async (req, res) => {
 
 router.post('/messages', requireAuth, allowRoles('admin', 'project_manager', 'developer'), async (req, res) => {
   try {
-    const { workspace, project, sender, receiver, content, messageType, attachments = [] } = req.body;
+    const { workspace, project, receiver, content, messageType, attachments = [] } = req.body;
 
-    if (!workspace || !sender || !content) {
-      return res.status(400).json({ message: 'Workspace, sender and message content are required.' });
+    if (!workspace || !content) {
+      return res.status(400).json({ message: 'Workspace and message content are required.' });
+    }
+
+    if (project) {
+      return requireProjectAccess(req, res, async () => {
+        const message = await ChatMessage.create({
+          workspace,
+          project,
+          sender: req.user._id,
+          receiver,
+          content,
+          messageType,
+          attachments,
+        });
+
+        return res.status(201).json({ message: 'Message sent successfully.', message });
+      });
     }
 
     const message = await ChatMessage.create({
       workspace,
       project,
-      sender,
+      sender: req.user._id,
       receiver,
       content,
       messageType,
@@ -371,7 +427,12 @@ router.post('/messages', requireAuth, allowRoles('admin', 'project_manager', 'de
 
 router.get('/messages', requireAuth, async (req, res) => {
   try {
-    const messages = await ChatMessage.find().populate('workspace project sender receiver');
+    const accessibleProjects = await Project.find(projectFilterForUser(req.user)).select('_id');
+    const projectIds = accessibleProjects.map((project) => project._id);
+    const messageFilter = req.query.projectId
+      ? { project: { $in: projectIds, $eq: req.query.projectId } }
+      : { $or: [{ project: { $in: projectIds } }, { project: null }] };
+    const messages = await ChatMessage.find(messageFilter).populate('workspace project sender receiver');
     res.json(messages);
   } catch (error) {
     res.status(500).json({ message: 'Messages could not be loaded.', error: error.message });
