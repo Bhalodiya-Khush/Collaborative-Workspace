@@ -106,6 +106,7 @@ The database is built with Mongoose and includes these collections:
 - `models/` - Mongoose schemas
 - `routes/api.js` - API endpoints for users, workspaces, projects, tasks, submissions, meetings, chat and notifications
 - `middleware/auth.js` - JWT verification middleware for protected API routes
+- `middleware/roles.js` - role-based authorization middleware
 - `public/` - simple HTML/CSS/JS frontend for testing the basic workflow
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
 
@@ -130,6 +131,7 @@ The app will be available at http://localhost:5000
 - POST /api/users/register
 - POST /api/users/login
 - GET /api/users/me (JWT required)
+- PATCH /api/users/:userId/role (admin JWT required)
 - GET /api/users
 - POST /api/workspaces
 - GET /api/workspaces
@@ -168,6 +170,17 @@ Authorization: Bearer your.jwt.token
 ```
 
 The simple HTML UI stores the token in browser local storage after login, sends it automatically with protected requests, and provides a logout button. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default).
+
+## Role-based authorization
+
+Public registration always creates a `developer` account. This prevents users from granting themselves admin or project manager privileges.
+
+- `admin`: create workspaces and projects, manage users, and create notifications
+- `project_manager`: view users, create tasks, schedule meetings, and create notifications
+- `developer`: view assigned data, submit code, schedule meetings, and send messages
+- `viewer`: read-only access to authenticated GET endpoints
+
+Protected write operations return `403 Access denied` when the logged-in user does not have the required role.
 
 ## Future next steps
 

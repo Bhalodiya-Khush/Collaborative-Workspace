@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const requireAuth = require('../middleware/auth');
+const allowRoles = require('../middleware/roles');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Project = require('../models/Project');
@@ -56,7 +57,7 @@ router.get('/dashboard', async (req, res) => {
 
 router.post('/users/register', async (req, res) => {
   try {
-    const { fullName, email, password, role = 'developer' } = req.body;
+    const { fullName, email, password } = req.body;
 
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: 'Full name, email and password are required.' });
@@ -72,7 +73,7 @@ router.post('/users/register', async (req, res) => {
       fullName,
       email: email.toLowerCase(),
       password: hashedPassword,
-      role,
+      role: 'developer',
     });
 
     res.status(201).json({
@@ -116,7 +117,7 @@ router.get('/users/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-router.get('/users', async (req, res) => {
+router.get('/users', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: -1 });
     res.json(users.map(sanitizeUser));
@@ -125,7 +126,37 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.post('/workspaces', requireAuth, async (req, res) => {
+router.patch('/users/:userId/role', requireAuth, allowRoles('admin'), async (req, res) => {
+  try {
+    const allowedRoles = ['admin', 'project_manager', 'developer', 'viewer'];
+    const { role } = req.body;
+
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({
+        message: `Role must be one of: ${allowedRoles.join(', ')}.`,
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { role },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.json({
+      message: 'User role updated successfully.',
+      user: sanitizeUser(user),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'User role update failed.', error: error.message });
+  }
+});
+
+router.post('/workspaces', requireAuth, allowRoles('admin'), async (req, res) => {
   try {
     const { name, description, owner, members = [] } = req.body;
 
@@ -157,7 +188,7 @@ router.get('/workspaces', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/projects', requireAuth, async (req, res) => {
+router.post('/projects', requireAuth, allowRoles('admin'), async (req, res) => {
   try {
     const { name, description, workspace, projectManager, developers = [], status, repositoryUrl, defaultBranch } = req.body;
 
@@ -209,7 +240,7 @@ router.get('/projects', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/tasks', requireAuth, async (req, res) => {
+router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
   try {
     const { title, description, project, workspace, assignee, reporter, priority, status, dueDate, labels, branchName } = req.body;
 
@@ -246,7 +277,7 @@ router.get('/tasks', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/submissions', requireAuth, async (req, res) => {
+router.post('/submissions', requireAuth, allowRoles('developer'), async (req, res) => {
   try {
     const { project, task, developer, title, description, branchName, files = [] } = req.body;
 
@@ -279,7 +310,7 @@ router.get('/submissions', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/meetings', requireAuth, async (req, res) => {
+router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'developer'), async (req, res) => {
   try {
     const { title, project, workspace, host, attendees = [], scheduledAt, durationMinutes, meetingType, agenda } = req.body;
 
@@ -314,7 +345,7 @@ router.get('/meetings', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/messages', requireAuth, async (req, res) => {
+router.post('/messages', requireAuth, allowRoles('admin', 'project_manager', 'developer'), async (req, res) => {
   try {
     const { workspace, project, sender, receiver, content, messageType, attachments = [] } = req.body;
 
@@ -347,7 +378,7 @@ router.get('/messages', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/notifications', requireAuth, async (req, res) => {
+router.post('/notifications', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
   try {
     const { user, title, message, type, relatedId } = req.body;
 
