@@ -111,6 +111,34 @@ form {
   gap: 12px;
 }
 
+.filter-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.task-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: white;
+}
+
+.task-item strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.task-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 input,
 textarea,
 select,
@@ -184,7 +212,8 @@ textarea {
 
 @media (max-width: 760px) {
   .two-column,
-  .stats-grid {
+  .stats-grid,
+  .filter-form {
     grid-template-columns: 1fr;
   }
 

@@ -62,6 +62,33 @@ const renderDashboard = (stats) => {
   `;
 };
 
+const renderTasks = (tasks) => {
+  const taskList = document.getElementById('taskList');
+  taskList.innerHTML = tasks.length
+    ? tasks.map((task) => `
+      <div class="task-item">
+        <strong>${task.title}</strong>
+        <span class="task-meta">
+          ${task.status} | ${task.priority} | ${task.completionPercentage}% |
+          Due: ${task.dueDate ? new Date(task.dueDate).toLocaleString() : 'No deadline'}
+        </span>
+      </div>
+    `).join('')
+    : '<p class="help-text">No tasks matched these filters.</p>';
+};
+
+const renderNotifications = (notifications) => {
+  const list = document.getElementById('notificationList');
+  list.innerHTML = notifications.length
+    ? notifications.map((notification) => `
+      <div class="task-item">
+        <strong>${notification.title}</strong>
+        <span class="task-meta">${notification.message}</span>
+      </div>
+    `).join('')
+    : '<p class="help-text">No notifications.</p>';
+};
+
 const submitForm = async (event, endpoint, transform = (data) => data, afterSubmit = () => {}) => {
   event.preventDefault();
   try {
@@ -216,6 +243,45 @@ document.getElementById('reviewForm').addEventListener('submit', async (event) =
         reviewNotes: data.reviewNotes,
       }),
     }));
+  } catch (error) {
+    printOutput({ error: error.message });
+  }
+});
+
+document.getElementById('taskFilterForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const filters = new URLSearchParams();
+  Object.entries(Object.fromEntries(new FormData(event.target).entries()))
+    .filter(([, value]) => value)
+    .forEach(([key, value]) => filters.set(key, value));
+
+  try {
+    const tasks = await apiRequest(`/tasks?${filters.toString()}`);
+    renderTasks(tasks);
+    printOutput({ message: `${tasks.length} task(s) loaded.`, tasks });
+  } catch (error) {
+    printOutput({ error: error.message });
+  }
+});
+
+document.getElementById('deadlineAlertForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { days } = Object.fromEntries(new FormData(event.target).entries());
+  try {
+    printOutput(await apiRequest('/tasks/deadline-alerts', {
+      method: 'POST',
+      body: JSON.stringify({ days: Number(days) }),
+    }));
+  } catch (error) {
+    printOutput({ error: error.message });
+  }
+});
+
+document.getElementById('notificationsBtn').addEventListener('click', async () => {
+  try {
+    const notifications = await apiRequest('/notifications');
+    renderNotifications(notifications);
+    printOutput(notifications);
   } catch (error) {
     printOutput({ error: error.message });
   }

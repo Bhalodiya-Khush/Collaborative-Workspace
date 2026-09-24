@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 
 const requireAuth = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
+const requireWorkspaceAccess = require('../middleware/workspaceAccess');
 const {
   projectFilterForUser,
   requireProjectAccess,
@@ -22,11 +23,17 @@ const { uploadSubmissionFiles } = require('../middleware/upload');
 
 const router = express.Router();
 
+const normalizeEmail = (email) => email.trim().toLowerCase();
+
 const createToken = (user) => jwt.sign(
   { userId: user._id.toString(), role: user.role },
   process.env.JWT_SECRET,
   { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
 );
+
+const logActivity = async ({ workspace, project = null, user, action, details = '' }) => {
+  await ActivityLog.create({ workspace, project, user, action, details });
+};
 
 const sanitizeUser = (user) => {
   if (!user) return null;
@@ -68,7 +75,8 @@ router.post('/users/register', async (req, res) => {
       return res.status(400).json({ message: 'Full name, email and password are required.' });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = normalizeEmail(email);
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(409).json({ message: 'A user with this email already exists.' });
     }
@@ -76,7 +84,7 @@ router.post('/users/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({
       fullName,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       password: hashedPassword,
       role: 'developer',
     });
@@ -98,7 +106,7 @@ router.post('/users/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: normalizeEmail(email) });
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
@@ -177,6 +185,12 @@ router.post('/workspaces', requireAuth, allowRoles('admin'), async (req, res) =>
     });
 
     await User.updateMany({ _id: { $in: workspace.members } }, { $addToSet: { workspaceIds: workspace._id } });
+    await logActivity({
+      workspace: workspace._id,
+      user: req.user._id,
+      action: 'workspace_created',
+      details: `Workspace "${workspace.name}" was created.`,
+    });
 
     res.status(201).json({ message: 'Workspace created successfully.', workspace });
   } catch (error) {
@@ -186,10 +200,102 @@ router.post('/workspaces', requireAuth, allowRoles('admin'), async (req, res) =>
 
 router.get('/workspaces', requireAuth, async (req, res) => {
   try {
-    const workspaces = await Workspace.find().populate('owner members projects');
+    const filter = req.user.role === 'admin'
+      ? {}
+      : { $or: [{ owner: req.user._id }, { members: req.user._id }] };
+    const workspaces = await Workspace.find(filter).populate('owner members projects');
     res.json(workspaces);
   } catch (error) {
     res.status(500).json({ message: 'Workspaces could not be loaded.', error: error.message });
+  }
+});
+
+router.get('/workspaces/:workspaceId/members', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const members = await User.find({ _id: { $in: req.workspace.members } }).select('-password');
+    res.json(members);
+  } catch (error) {
+    res.status(500).json({ message: 'Workspace members could not be loaded.', error: error.message });
+  }
+});
+
+router.post('/workspaces/:workspaceId/members', requireAuth, allowRoles('admin'), requireWorkspaceAccess, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    await Workspace.findByIdAndUpdate(req.workspace._id, { $addToSet: { members: user._id } });
+    await User.findByIdAndUpdate(user._id, { $addToSet: { workspaceIds: req.workspace._id } });
+    await logActivity({
+      workspace: req.workspace._id,
+      user: req.user._id,
+      action: 'workspace_member_added',
+      details: `User ${user.email} was added to the workspace.`,
+    });
+
+    res.status(201).json({ message: 'Workspace member added successfully.', user: { _id: user._id, email: user.email, fullName: user.fullName } });
+  } catch (error) {
+    res.status(500).json({ message: 'Workspace member could not be added.', error: error.message });
+  }
+});
+
+router.delete('/workspaces/:workspaceId/members/:userId', requireAuth, allowRoles('admin'), requireWorkspaceAccess, async (req, res) => {
+  try {
+    if (req.workspace.owner.toString() === req.params.userId) {
+      return res.status(400).json({ message: 'The workspace owner cannot be removed.' });
+    }
+
+    await Workspace.findByIdAndUpdate(req.workspace._id, { $pull: { members: req.params.userId } });
+    await User.findByIdAndUpdate(req.params.userId, { $pull: { workspaceIds: req.workspace._id } });
+    await logActivity({
+      workspace: req.workspace._id,
+      user: req.user._id,
+      action: 'workspace_member_removed',
+      details: `User ${req.params.userId} was removed from the workspace.`,
+    });
+
+    res.json({ message: 'Workspace member removed successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Workspace member could not be removed.', error: error.message });
+  }
+});
+
+router.patch('/workspaces/:workspaceId/role', requireAuth, allowRoles('admin'), requireWorkspaceAccess, async (req, res) => {
+  try {
+    const { userId, role } = req.body;
+    const allowedRoles = ['admin', 'project_manager', 'developer', 'viewer'];
+    if (!userId || !allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'User ID and a valid role are required.' });
+    }
+
+    const user = await User.findByIdAndUpdate(userId, { role }, { new: true }).select('-password');
+    if (!user || !req.workspace.members.some((member) => member.toString() === userId)) {
+      return res.status(400).json({ message: 'The user must be an active workspace member.' });
+    }
+
+    await logActivity({
+      workspace: req.workspace._id,
+      user: req.user._id,
+      action: 'workspace_role_assigned',
+      details: `User ${user.email} was assigned role ${role}.`,
+    });
+    res.json({ message: 'Workspace role assigned successfully.', user });
+  } catch (error) {
+    res.status(500).json({ message: 'Workspace role assignment failed.', error: error.message });
+  }
+});
+
+router.get('/workspaces/:workspaceId/activity', requireAuth, requireWorkspaceAccess, async (req, res) => {
+  try {
+    const logs = await ActivityLog.find({ workspace: req.workspace._id })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate('user', 'fullName email role')
+      .populate('project', 'name');
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ message: 'Workspace activity could not be loaded.', error: error.message });
   }
 });
 
@@ -199,6 +305,14 @@ router.post('/projects', requireAuth, allowRoles('admin'), async (req, res) => {
 
     if (!name || !workspace || !projectManager) {
       return res.status(400).json({ message: 'Project name, workspace and project manager are required.' });
+    }
+
+    const workspaceRecord = await Workspace.findOne({
+      _id: workspace,
+      members: { $all: [projectManager, ...developers] },
+    });
+    if (!workspaceRecord) {
+      return res.status(400).json({ message: 'Project manager and developers must be workspace members.' });
     }
 
     const project = await Project.create({
@@ -229,6 +343,13 @@ router.post('/projects', requireAuth, allowRoles('admin'), async (req, res) => {
         )
       )
     );
+    await logActivity({
+      workspace,
+      project: project._id,
+      user: req.user._id,
+      action: 'project_created',
+      details: `Project "${project.name}" was created.`,
+    });
 
     res.status(201).json({ message: 'Project created successfully.', project });
   } catch (error) {
@@ -243,6 +364,91 @@ router.get('/projects', requireAuth, async (req, res) => {
     res.json(projects);
   } catch (error) {
     res.status(500).json({ message: 'Projects could not be loaded.', error: error.message });
+  }
+});
+
+router.patch('/projects/:projectId', requireAuth, allowRoles('admin', 'project_manager'), requireProjectAccess, async (req, res) => {
+  try {
+    const allowedFields = ['name', 'description', 'status', 'progress', 'repositoryUrl', 'defaultBranch', 'startDate', 'endDate'];
+    const updates = Object.fromEntries(
+      Object.entries(req.body).filter(([key]) => allowedFields.includes(key))
+    );
+
+    if (updates.progress !== undefined && (!Number.isInteger(Number(updates.progress))
+      || Number(updates.progress) < 0 || Number(updates.progress) > 100)) {
+      return res.status(400).json({ message: 'Project progress must be an integer from 0 to 100.' });
+    }
+
+    const project = await Project.findByIdAndUpdate(
+      req.project._id,
+      updates,
+      { new: true, runValidators: true }
+    ).populate('workspace projectManager developers');
+    await logActivity({
+      workspace: project.workspace._id || project.workspace,
+      project: project._id,
+      user: req.user._id,
+      action: 'project_updated',
+      details: `Project "${project.name}" was updated.`,
+    });
+
+    res.json({ message: 'Project updated successfully.', project });
+  } catch (error) {
+    res.status(500).json({ message: 'Project update failed.', error: error.message });
+  }
+});
+
+router.get('/projects/:projectId/monitoring', requireAuth, requireProjectAccess, async (req, res) => {
+  try {
+    const [taskSummary, submissionSummary, activityCount] = await Promise.all([
+      Task.aggregate([
+        { $match: { project: req.project._id } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Submission.aggregate([
+        { $match: { project: req.project._id } },
+        { $group: { _id: '$reviewStatus', count: { $sum: 1 } } },
+      ]),
+      ActivityLog.countDocuments({ project: req.project._id }),
+    ]);
+
+    res.json({
+      project: req.project,
+      taskSummary,
+      submissionSummary,
+      activityCount,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Project monitoring data could not be loaded.', error: error.message });
+  }
+});
+
+router.get('/projects/:projectId/report', requireAuth, requireProjectAccess, async (req, res) => {
+  try {
+    const [tasks, submissions, meetings] = await Promise.all([
+      Task.find({ project: req.project._id }).select('title status completionPercentage dueDate'),
+      Submission.find({ project: req.project._id }).select('title reviewStatus submittedAt'),
+      Meeting.countDocuments({ project: req.project._id }),
+    ]);
+    const completedTasks = tasks.filter((task) => task.status === 'completed').length;
+    const averageProgress = tasks.length
+      ? Math.round(tasks.reduce((total, task) => total + task.completionPercentage, 0) / tasks.length)
+      : 0;
+
+    res.json({
+      project: req.project,
+      totals: {
+        tasks: tasks.length,
+        completedTasks,
+        submissions: submissions.length,
+        meetings,
+        averageTaskProgress: averageProgress,
+      },
+      tasks,
+      submissions,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Project report could not be generated.', error: error.message });
   }
 });
 
@@ -480,13 +686,86 @@ router.get('/tasks', requireAuth, async (req, res) => {
     const projectFilter = projectFilterForUser(req.user);
     const accessibleProjects = await Project.find(projectFilter).select('_id');
     const projectIds = accessibleProjects.map((project) => project._id);
-    const taskFilter = req.query.projectId
-      ? { project: { $in: projectIds, $eq: req.query.projectId } }
-      : { project: { $in: projectIds } };
-    const tasks = await Task.find(taskFilter).populate('project workspace assignee reporter');
+    const taskFilter = { project: { $in: projectIds } };
+    const { projectId, status, priority, assignee, due, search } = req.query;
+
+    if (projectId) taskFilter.project = { $in: projectIds, $eq: projectId };
+    if (status) taskFilter.status = status;
+    if (priority) taskFilter.priority = priority;
+    if (assignee) taskFilter.assignee = assignee;
+    if (search) taskFilter.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ];
+
+    if (due === 'overdue') {
+      taskFilter.dueDate = { $lt: new Date() };
+      taskFilter.status = { $nin: ['completed'] };
+    } else if (due === 'upcoming') {
+      taskFilter.dueDate = {
+        $gte: new Date(),
+        $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      };
+    } else if (due === 'none') {
+      taskFilter.dueDate = null;
+    }
+
+    const tasks = await Task.find(taskFilter)
+      .sort({ dueDate: 1, createdAt: -1 })
+      .populate('project workspace assignee reporter');
     res.json(tasks);
   } catch (error) {
     res.status(500).json({ message: 'Tasks could not be loaded.', error: error.message });
+  }
+});
+
+router.post('/tasks/deadline-alerts', requireAuth, async (req, res) => {
+  try {
+    const days = Number(req.body.days || req.query.days || 2);
+    if (!Number.isInteger(days) || days < 0 || days > 30) {
+      return res.status(400).json({ message: 'Days must be an integer from 0 to 30.' });
+    }
+
+    const accessibleProjects = await Project.find(projectFilterForUser(req.user)).select('_id');
+    const projectIds = accessibleProjects.map((project) => project._id);
+    const now = new Date();
+    const deadline = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    const tasks = await Task.find({
+      project: { $in: projectIds },
+      assignee: { $ne: null },
+      dueDate: { $lte: deadline },
+      status: { $nin: ['completed'] },
+    }).select('title dueDate assignee');
+
+    let createdCount = 0;
+    for (const task of tasks) {
+      const existing = await Notification.findOne({
+        user: task.assignee,
+        relatedId: task._id,
+        type: 'task',
+        title: 'Task deadline approaching',
+        createdAt: { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+      });
+
+      if (!existing) {
+        await Notification.create({
+          user: task.assignee,
+          title: task.dueDate < now ? 'Task deadline overdue' : 'Task deadline approaching',
+          message: `"${task.title}" is due by ${task.dueDate.toISOString()}.`,
+          type: 'task',
+          relatedId: task._id,
+        });
+        createdCount += 1;
+      }
+    }
+
+    res.json({
+      message: 'Deadline alerts checked successfully.',
+      matchingTasks: tasks.length,
+      notificationsCreated: createdCount,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Deadline alerts could not be created.', error: error.message });
   }
 });
 
@@ -708,7 +987,9 @@ router.post('/notifications', requireAuth, allowRoles('admin', 'project_manager'
 
 router.get('/notifications', requireAuth, async (req, res) => {
   try {
-    const notifications = await Notification.find().populate('user');
+    const notifications = await Notification.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .populate('user');
     res.json(notifications);
   } catch (error) {
     res.status(500).json({ message: 'Notifications could not be loaded.', error: error.message });

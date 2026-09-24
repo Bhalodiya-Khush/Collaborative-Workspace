@@ -167,6 +167,55 @@
         </div>
       </section>
 
+      <section class="panel">
+        <div class="card">
+          <h3>Task List and Filters</h3>
+          <form id="taskFilterForm" class="filter-form">
+            <input type="text" name="projectId" placeholder="Project ID (optional)" />
+            <input type="text" name="search" placeholder="Search title or description" />
+            <select name="status">
+              <option value="">All statuses</option>
+              <option value="todo">To do</option>
+              <option value="in_progress">In progress</option>
+              <option value="in_review">In review</option>
+              <option value="completed">Completed</option>
+              <option value="blocked">Blocked</option>
+            </select>
+            <select name="priority">
+              <option value="">All priorities</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+            <select name="due">
+              <option value="">Any deadline</option>
+              <option value="upcoming">Due in next 7 days</option>
+              <option value="overdue">Overdue</option>
+              <option value="none">No deadline</option>
+            </select>
+            <button type="submit" class="primary-btn">Load Tasks</button>
+          </form>
+          <div id="taskList" class="task-list"></div>
+        </div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>Deadline Alerts</h3>
+          <form id="deadlineAlertForm">
+            <input type="number" name="days" min="0" max="30" value="2" required />
+            <p class="help-text">Create alerts for assigned, incomplete tasks due within this many days.</p>
+            <button type="submit" class="primary-btn">Check Deadlines</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>My Notifications</h3>
+          <button id="notificationsBtn" type="button" class="primary-btn">Load Notifications</button>
+          <div id="notificationList" class="task-list"></div>
+        </div>
+      </section>
+
       <section class="panel output-panel">
         <h3>Response Output</h3>
         <pre id="output">Waiting for API response...</pre>

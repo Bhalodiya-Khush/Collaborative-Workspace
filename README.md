@@ -123,8 +123,95 @@ The database is built with Mongoose and includes these collections:
    npm run dev
 5. Seed demo data:
    npm run seed
+6. Update an existing database after schema/workflow changes:
+   npm run migrate
 
 The app will be available at http://localhost:5000
+
+## Browser page flow
+
+The first browser page is the server-rendered login page:
+
+```text
+GET /
+GET /login
+```
+
+Registration is available at:
+
+```text
+GET /register
+```
+
+After successful login, the browser stores the JWT and opens:
+
+```text
+GET /dashboard
+```
+
+The dashboard loads the authenticated user, system counts, accessible projects, tasks, and notifications. These pages use plain HTML returned with `res.send()` from Express middleware and do not use CSS. The existing `/api/*` JSON endpoints remain available for all data operations.
+
+Additional plain HTML data pages are available after login:
+
+```text
+/users
+/workspaces
+/projects
+/tasks
+/submissions
+/meetings
+/messages
+/notifications
+/monitoring
+/reports
+```
+
+Each page calls its corresponding JWT-protected API endpoint and displays the returned data as plain JSON inside the HTML page.
+
+The module pages now also contain plain HTML forms for the implemented operations:
+
+- Users: update a user role
+- Workspaces: create a workspace
+- Projects: create and update project details/progress
+- Tasks: create, assign, update status, and update progress
+- Submissions: upload source files or ZIP files
+- Meetings: schedule meetings
+- Messages: send project/workspace messages
+- Notifications: create and view notifications
+- Monitoring: view task, submission, and activity summaries
+- Reports: generate project performance totals and progress data
+
+All forms send requests to the existing JWT-protected `/api/*` routes. Server-side role and project-access checks remain in force, so unauthorized actions return an error instead of changing data.
+
+## Workspace core APIs
+
+```text
+GET    /api/workspaces/:workspaceId/members
+POST   /api/workspaces/:workspaceId/members
+PATCH  /api/workspaces/:workspaceId/role
+DELETE /api/workspaces/:workspaceId/members/:userId
+GET    /api/workspaces/:workspaceId/activity
+GET    /api/projects/:projectId/monitoring
+GET    /api/projects/:projectId/report
+```
+
+Projects can only be created with a project manager and developers who are already members of the selected workspace. Workspace activity is recorded for workspace membership, role, and project changes.
+
+The migration command is non-destructive. It backfills existing workspace members, user workspace/project references, project member records, and a database migration activity entry without deleting users, workspaces, projects, tasks, or submissions.
+
+## Server-rendered HTML pages
+
+The API remains JSON-based, while the following browser-friendly route is handled by Express middleware:
+
+```text
+GET /pages
+GET /pages/health
+GET /pages/dashboard
+GET /pages/projects
+GET /pages/tasks
+```
+
+Any `/pages...` request returns a simple HTML response containing the requested URL and links to the available server pages. This keeps the `/api/*` JSON endpoints compatible with the existing HTML frontend.
 
 ## API endpoints
 
@@ -139,6 +226,7 @@ The app will be available at http://localhost:5000
 - GET /api/workspaces
 - POST /api/projects
 - GET /api/projects
+- PATCH /api/projects/:projectId
 - GET /api/projects/:projectId/members
 - POST /api/projects/:projectId/members
 - PATCH /api/projects/:projectId/members/:userId/role
@@ -148,6 +236,8 @@ The app will be available at http://localhost:5000
 - PATCH /api/tasks/:taskId/assign
 - PATCH /api/tasks/:taskId/status
 - PATCH /api/tasks/:taskId/progress
+- GET /api/tasks?status=in_progress&priority=high&due=upcoming&search=dashboard
+- POST /api/tasks/deadline-alerts
 - POST /api/submissions (developer must belong to the project)
 - GET /api/submissions (only submissions from accessible projects)
 - PATCH /api/submissions/:submissionId/review
@@ -208,6 +298,12 @@ Files field: files
 ```
 
 Each file is limited to 25 MB. Uploaded files are stored in the local `uploads/` directory and their metadata is saved in `Submission.files`. Download URLs are returned as `/uploads/<stored-file-name>`.
+
+## Task filtering and deadline alerts
+
+Authenticated users can filter tasks using `projectId`, `status`, `priority`, `assignee`, `due`, and `search` query parameters. The `due` filter supports `upcoming`, `overdue`, and `none`.
+
+`POST /api/tasks/deadline-alerts` creates at most one task notification per user and task within a 24-hour period. Send `{ "days": 2 }` to check overdue tasks and tasks due within the next two days. `GET /api/notifications` returns only notifications belonging to the authenticated user.
 
 ## Project-level authorization
 

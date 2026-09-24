@@ -4,6 +4,8 @@ const cors = require('cors');
 const path = require('path');
 const connectDB = require('./config/db');
 const apiRoutes = require('./routes/api');
+const htmlPages = require('./middleware/htmlPages');
+const pageFlow = require('./middleware/pageFlow');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,6 +19,8 @@ connectDB();
 app.use('/api', apiRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(pageFlow);
+app.use('/pages', htmlPages);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((error, req, res, next) => {
   if (error.code === 'LIMIT_FILE_SIZE') {
