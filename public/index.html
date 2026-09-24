@@ -82,7 +82,6 @@
             <input type="text" name="project" placeholder="Project ID" required />
             <input type="text" name="workspace" placeholder="Workspace ID" required />
             <input type="text" name="assignee" placeholder="Assignee user ID" />
-            <input type="text" name="reporter" placeholder="Reporter user ID" required />
             <select name="priority">
               <option value="low">Low</option>
               <option value="medium" selected>Medium</option>
@@ -95,14 +94,75 @@
 
         <div class="card">
           <h3>Project Submission</h3>
-          <form id="submissionForm">
+          <form id="submissionForm" enctype="multipart/form-data">
             <input type="text" name="project" placeholder="Project ID" required />
             <input type="text" name="task" placeholder="Task ID" required />
-            <input type="text" name="developer" placeholder="Developer ID" required />
             <input type="text" name="title" placeholder="Submission title" required />
             <input type="text" name="branchName" placeholder="Branch name" />
             <textarea name="description" placeholder="Submission notes"></textarea>
-            <button type="submit" class="primary-btn">Submit Code</button>
+            <input type="file" name="files" multiple accept=".zip,.js,.jsx,.ts,.tsx,.html,.css,.json,.java,.py,.c,.cpp,.h,.md,.txt" />
+            <p class="help-text">Up to 10 source files or ZIP files, 25 MB each.</p>
+            <button type="submit" class="primary-btn">Submit Code and Files</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>Add Project Member</h3>
+          <form id="memberForm">
+            <input type="text" name="projectId" placeholder="Project ID" required />
+            <input type="text" name="userId" placeholder="Developer user ID" required />
+            <select name="role">
+              <option value="developer">Developer</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="guest">Guest</option>
+            </select>
+            <select name="accessLevel">
+              <option value="write">Write</option>
+              <option value="read">Read</option>
+            </select>
+            <button type="submit" class="primary-btn">Add Member</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Assign Task</h3>
+          <form id="taskAssignForm">
+            <input type="text" name="taskId" placeholder="Task ID" required />
+            <input type="text" name="assignee" placeholder="Developer user ID" required />
+            <button type="submit" class="primary-btn">Assign Task</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel two-column">
+        <div class="card">
+          <h3>Update Task</h3>
+          <form id="taskUpdateForm">
+            <input type="text" name="taskId" placeholder="Task ID" required />
+            <select name="status">
+              <option value="todo">To do</option>
+              <option value="in_progress">In progress</option>
+              <option value="in_review">In review</option>
+              <option value="completed">Completed</option>
+              <option value="blocked">Blocked</option>
+            </select>
+            <input type="number" name="completionPercentage" min="0" max="100" value="0" required />
+            <button type="submit" class="primary-btn">Update Task</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Review Submission</h3>
+          <form id="reviewForm">
+            <input type="text" name="submissionId" placeholder="Submission ID" required />
+            <select name="reviewStatus">
+              <option value="approved">Approved</option>
+              <option value="changes_requested">Changes requested</option>
+            </select>
+            <textarea name="reviewNotes" placeholder="Review notes"></textarea>
+            <button type="submit" class="primary-btn">Save Review</button>
           </form>
         </div>
       </section>

@@ -18,6 +18,7 @@ const Meeting = require('../models/Meeting');
 const ChatMessage = require('../models/ChatMessage');
 const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
+const { uploadSubmissionFiles } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -245,12 +246,123 @@ router.get('/projects', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/projects/:projectId/members', requireAuth, requireProjectAccess, async (req, res) => {
+  try {
+    const members = await ProjectMember.find({
+      project: req.params.projectId,
+      isActive: true,
+    }).populate('user', '-password');
+
+    res.json(members);
+  } catch (error) {
+    res.status(500).json({ message: 'Project members could not be loaded.', error: error.message });
+  }
+});
+
+router.post(
+  '/projects/:projectId/members',
+  requireAuth,
+  allowRoles('admin', 'project_manager'),
+  requireProjectAccess,
+  async (req, res) => {
+    try {
+      const { userId, role = 'developer', accessLevel = 'write' } = req.body;
+      const allowedRoles = ['developer', 'reviewer', 'guest'];
+      const allowedAccessLevels = ['read', 'write'];
+
+      if (!userId || !allowedRoles.includes(role) || !allowedAccessLevels.includes(accessLevel)) {
+        return res.status(400).json({
+          message: 'User ID, valid project role, and valid access level are required.',
+        });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+
+      if (user._id.toString() === req.project.projectManager.toString()) {
+        return res.status(400).json({ message: 'The project manager is already a project member.' });
+      }
+
+      const member = await ProjectMember.findOneAndUpdate(
+        { project: req.project._id, user: user._id },
+        { project: req.project._id, user: user._id, role, accessLevel, isActive: true },
+        { upsert: true, new: true, runValidators: true }
+      ).populate('user', '-password');
+
+      await Project.findByIdAndUpdate(req.project._id, { $addToSet: { developers: user._id } });
+      await User.findByIdAndUpdate(user._id, { $addToSet: { projectIds: req.project._id } });
+
+      res.status(201).json({ message: 'Project member added successfully.', member });
+    } catch (error) {
+      res.status(500).json({ message: 'Project member could not be added.', error: error.message });
+    }
+  }
+);
+
+router.patch(
+  '/projects/:projectId/members/:userId/role',
+  requireAuth,
+  allowRoles('admin', 'project_manager'),
+  requireProjectAccess,
+  async (req, res) => {
+    try {
+      const { role, accessLevel = 'write' } = req.body;
+      const member = await ProjectMember.findOneAndUpdate(
+        { project: req.project._id, user: req.params.userId, isActive: true },
+        { role, accessLevel },
+        { new: true, runValidators: true }
+      ).populate('user', '-password');
+
+      if (!member) {
+        return res.status(404).json({ message: 'Active project member not found.' });
+      }
+
+      res.json({ message: 'Project member role updated successfully.', member });
+    } catch (error) {
+      res.status(500).json({ message: 'Project member role update failed.', error: error.message });
+    }
+  }
+);
+
+router.delete(
+  '/projects/:projectId/members/:userId',
+  requireAuth,
+  allowRoles('admin', 'project_manager'),
+  requireProjectAccess,
+  async (req, res) => {
+    try {
+      const member = await ProjectMember.findOneAndUpdate(
+        { project: req.project._id, user: req.params.userId, isActive: true },
+        { isActive: false },
+        { new: true }
+      );
+
+      if (!member) {
+        return res.status(404).json({ message: 'Active project member not found.' });
+      }
+
+      await Project.findByIdAndUpdate(req.project._id, { $pull: { developers: req.params.userId } });
+      await User.findByIdAndUpdate(req.params.userId, { $pull: { projectIds: req.project._id } });
+
+      res.json({ message: 'Project member removed successfully.' });
+    } catch (error) {
+      res.status(500).json({ message: 'Project member could not be removed.', error: error.message });
+    }
+  }
+);
+
 router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), requireProjectAccess, async (req, res) => {
   try {
     const { title, description, project, workspace, assignee, priority, status, dueDate, labels, branchName } = req.body;
 
     if (!title || !project || !workspace) {
       return res.status(400).json({ message: 'Task title, project and workspace are required.' });
+    }
+
+    if (assignee && !req.project.developers.some((developer) => developer.toString() === assignee)) {
+      return res.status(400).json({ message: 'Assignee must be an active developer in this project.' });
     }
 
     const task = await Task.create({
@@ -273,6 +385,96 @@ router.post('/tasks', requireAuth, allowRoles('admin', 'project_manager'), requi
   }
 });
 
+router.patch('/tasks/:taskId/assign', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
+
+    const project = await Project.findOne({
+      _id: task.project,
+      ...projectFilterForUser(req.user),
+    });
+    if (!project) {
+      return res.status(404).json({ message: 'Task project not found or access denied.' });
+    }
+
+    const { assignee } = req.body;
+    if (!assignee || !project.developers.some((developer) => developer.toString() === assignee)) {
+      return res.status(400).json({ message: 'Assignee must be an active developer in this project.' });
+    }
+
+    task.assignee = assignee;
+    await task.save();
+    res.json({ message: 'Task assigned successfully.', task });
+  } catch (error) {
+    res.status(500).json({ message: 'Task assignment failed.', error: error.message });
+  }
+});
+
+router.patch('/tasks/:taskId/status', requireAuth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
+
+    const project = await Project.findOne({ _id: task.project, ...projectFilterForUser(req.user) });
+    if (!project) {
+      return res.status(404).json({ message: 'Task project not found or access denied.' });
+    }
+
+    const canUpdate = ['admin', 'project_manager'].includes(req.user.role)
+      || (req.user.role === 'developer' && task.assignee?.toString() === req.user._id.toString());
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'You can only update tasks assigned to you.' });
+    }
+
+    const allowedStatuses = ['todo', 'in_progress', 'in_review', 'completed', 'blocked'];
+    if (!allowedStatuses.includes(req.body.status)) {
+      return res.status(400).json({ message: 'Invalid task status.' });
+    }
+
+    task.status = req.body.status;
+    await task.save();
+    res.json({ message: 'Task status updated successfully.', task });
+  } catch (error) {
+    res.status(500).json({ message: 'Task status update failed.', error: error.message });
+  }
+});
+
+router.patch('/tasks/:taskId/progress', requireAuth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
+
+    const project = await Project.findOne({ _id: task.project, ...projectFilterForUser(req.user) });
+    if (!project) {
+      return res.status(404).json({ message: 'Task project not found or access denied.' });
+    }
+
+    const canUpdate = ['admin', 'project_manager'].includes(req.user.role)
+      || (req.user.role === 'developer' && task.assignee?.toString() === req.user._id.toString());
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'You can only update tasks assigned to you.' });
+    }
+
+    const completionPercentage = Number(req.body.completionPercentage);
+    if (!Number.isInteger(completionPercentage) || completionPercentage < 0 || completionPercentage > 100) {
+      return res.status(400).json({ message: 'Progress must be an integer from 0 to 100.' });
+    }
+
+    task.completionPercentage = completionPercentage;
+    await task.save();
+    res.json({ message: 'Task progress updated successfully.', task });
+  } catch (error) {
+    res.status(500).json({ message: 'Task progress update failed.', error: error.message });
+  }
+});
+
 router.get('/tasks', requireAuth, async (req, res) => {
   try {
     const projectFilter = projectFilterForUser(req.user);
@@ -288,29 +490,50 @@ router.get('/tasks', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/submissions', requireAuth, allowRoles('developer'), requireProjectAccess, async (req, res) => {
-  try {
-    const { project, task, title, description, branchName, files = [] } = req.body;
+router.post(
+  '/submissions',
+  requireAuth,
+  allowRoles('developer'),
+  uploadSubmissionFiles.array('files', 10),
+  requireProjectAccess,
+  async (req, res) => {
+    try {
+      const { project, task, title, description, branchName } = req.body;
 
-    if (!project || !task || !title) {
-      return res.status(400).json({ message: 'Project, task and submission title are required.' });
+      if (!project || !task || !title) {
+        return res.status(400).json({ message: 'Project, task and submission title are required.' });
+      }
+
+      const files = (req.files || []).map((file) => ({
+        fileName: file.originalname,
+        downloadUrl: `/uploads/${file.filename}`,
+        fileType: file.mimetype || 'application/octet-stream',
+        size: file.size,
+      }));
+
+      const submission = await Submission.create({
+        project,
+        task,
+        developer: req.user._id,
+        title,
+        description,
+        branchName,
+        files,
+      });
+
+      res.status(201).json({ message: 'Submission created successfully.', submission });
+    } catch (error) {
+      (req.files || []).forEach((file) => {
+        try {
+          require('fs').unlinkSync(file.path);
+        } catch (cleanupError) {
+          console.error('Uploaded file cleanup failed:', cleanupError.message);
+        }
+      });
+      res.status(500).json({ message: 'Submission creation failed.', error: error.message });
     }
-
-    const submission = await Submission.create({
-      project,
-      task,
-      developer: req.user._id,
-      title,
-      description,
-      branchName,
-      files,
-    });
-
-    res.status(201).json({ message: 'Submission created successfully.', submission });
-  } catch (error) {
-    res.status(500).json({ message: 'Submission creation failed.', error: error.message });
   }
-});
+);
 
 router.get('/submissions', requireAuth, async (req, res) => {
   try {
@@ -323,6 +546,35 @@ router.get('/submissions', requireAuth, async (req, res) => {
     res.json(submissions);
   } catch (error) {
     res.status(500).json({ message: 'Submissions could not be loaded.', error: error.message });
+  }
+});
+
+router.patch('/submissions/:submissionId/review', requireAuth, allowRoles('admin', 'project_manager'), async (req, res) => {
+  try {
+    const submission = await Submission.findById(req.params.submissionId);
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found.' });
+    }
+
+    const project = await Project.findOne({
+      _id: submission.project,
+      ...projectFilterForUser(req.user),
+    });
+    if (!project) {
+      return res.status(404).json({ message: 'Submission project not found or access denied.' });
+    }
+
+    const allowedStatuses = ['approved', 'changes_requested'];
+    if (!allowedStatuses.includes(req.body.reviewStatus)) {
+      return res.status(400).json({ message: 'Review status must be approved or changes_requested.' });
+    }
+
+    submission.reviewStatus = req.body.reviewStatus;
+    submission.reviewNotes = req.body.reviewNotes || '';
+    await submission.save();
+    res.json({ message: 'Submission review updated successfully.', submission });
+  } catch (error) {
+    res.status(500).json({ message: 'Submission review failed.', error: error.message });
   }
 });
 

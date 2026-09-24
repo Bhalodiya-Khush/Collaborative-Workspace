@@ -108,6 +108,7 @@ The database is built with Mongoose and includes these collections:
 - `middleware/auth.js` - JWT verification middleware for protected API routes
 - `middleware/roles.js` - role-based authorization middleware
 - `middleware/projectAccess.js` - project membership and project-manager access checks
+- `middleware/upload.js` - source-code and ZIP upload validation/storage
 - `public/` - simple HTML/CSS/JS frontend for testing the basic workflow
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
 
@@ -138,10 +139,18 @@ The app will be available at http://localhost:5000
 - GET /api/workspaces
 - POST /api/projects
 - GET /api/projects
+- GET /api/projects/:projectId/members
+- POST /api/projects/:projectId/members
+- PATCH /api/projects/:projectId/members/:userId/role
+- DELETE /api/projects/:projectId/members/:userId
 - POST /api/tasks (project access required)
 - GET /api/tasks (only tasks from accessible projects)
+- PATCH /api/tasks/:taskId/assign
+- PATCH /api/tasks/:taskId/status
+- PATCH /api/tasks/:taskId/progress
 - POST /api/submissions (developer must belong to the project)
 - GET /api/submissions (only submissions from accessible projects)
+- PATCH /api/submissions/:submissionId/review
 - POST /api/meetings
 - GET /api/meetings
 - POST /api/messages
@@ -180,6 +189,25 @@ Public registration always creates a `developer` account. This prevents users fr
 - `project_manager`: view users, create tasks, schedule meetings, and create notifications
 - `developer`: view assigned data, submit code, schedule meetings, and send messages
 - `viewer`: read-only access to authenticated GET endpoints
+
+Project managers can add, remove, and update project members on their assigned projects. Task assignees must be active developers in the project, developers can update only their own assigned tasks, and project managers/admins can review submissions.
+
+## Code and ZIP uploads
+
+Developers can upload up to 10 source-code files or ZIP files when creating a submission:
+
+```text
+POST /api/submissions
+Content-Type: multipart/form-data
+Field: project
+Field: task
+Field: title
+Field: description
+Field: branchName
+Files field: files
+```
+
+Each file is limited to 25 MB. Uploaded files are stored in the local `uploads/` directory and their metadata is saved in `Submission.files`. Download URLs are returned as `/uploads/<stored-file-name>`.
 
 ## Project-level authorization
 

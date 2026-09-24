@@ -6,6 +6,7 @@ const connectDB = require('../config/db');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Project = require('../models/Project');
+const ProjectMember = require('../models/ProjectMember');
 const Task = require('../models/Task');
 const Submission = require('../models/Submission');
 const Meeting = require('../models/Meeting');
@@ -68,6 +69,34 @@ const seed = async () => {
     });
 
     await Workspace.findByIdAndUpdate(workspace._id, { $set: { projects: [project._id] } });
+    await User.updateMany(
+      { _id: { $in: [admin._id, pm._id, dev1._id, dev2._id] } },
+      { $addToSet: { workspaceIds: workspace._id } }
+    );
+    await User.updateMany(
+      { _id: { $in: [pm._id, dev1._id, dev2._id] } },
+      { $addToSet: { projectIds: project._id } }
+    );
+    await ProjectMember.create([
+      {
+        project: project._id,
+        user: pm._id,
+        role: 'project_manager',
+        accessLevel: 'admin',
+      },
+      {
+        project: project._id,
+        user: dev1._id,
+        role: 'developer',
+        accessLevel: 'write',
+      },
+      {
+        project: project._id,
+        user: dev2._id,
+        role: 'developer',
+        accessLevel: 'write',
+      },
+    ]);
 
     const task = await Task.create({
       title: 'Create login and workspace dashboard',
