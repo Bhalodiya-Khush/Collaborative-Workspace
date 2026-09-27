@@ -13,6 +13,22 @@ const ChatMessage = require('../models/ChatMessage');
 const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
 
+const normalizeEmail = (email) => email.trim().toLowerCase();
+
+const createToken = (user) => jwt.sign(
+  { userId: user._id.toString(), role: user.role },
+  process.env.JWT_SECRET,
+  { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+);
+
+const sanitizeUser = (user) => {
+  if (!user) return null;
+
+  const doc = user.toObject ? user.toObject() : { ...user };
+  delete doc.password;
+  return doc;
+};
+
 const handleGetHealth = (req, res) => {
   res.json({ status: 'ok', message: 'Collaborative Workspace API is running.' });
 };
@@ -41,7 +57,11 @@ const handlePostUsersRegister = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
 
-    if (!fullName || !email || !password) {
+    if (
+      typeof fullName !== 'string' || !fullName.trim()
+      || typeof email !== 'string' || !email.trim()
+      || typeof password !== 'string' || !password
+    ) {
       return res.status(400).json({ message: 'Full name, email and password are required.' });
     }
 
@@ -72,7 +92,7 @@ const handlePostUsersLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
