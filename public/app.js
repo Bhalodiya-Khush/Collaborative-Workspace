@@ -3,8 +3,6 @@ const dashboard = document.getElementById('dashboard');
 const authStatus = document.getElementById('authStatus');
 const tokenStorageKey = 'collaborativeWorkspaceToken';
 
-let currentUser = null;
-
 const printOutput = (data) => {
   output.textContent = JSON.stringify(data, null, 2);
 };
@@ -12,7 +10,6 @@ const printOutput = (data) => {
 const getToken = () => localStorage.getItem(tokenStorageKey);
 
 const updateAuthStatus = (user = null) => {
-  currentUser = user;
   authStatus.textContent = user
     ? `Logged in: ${user.fullName} (${user.role})`
     : 'Not logged in';

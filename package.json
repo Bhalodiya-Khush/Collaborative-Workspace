@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seed.js",
     "migrate": "node scripts/migrate.js",
-    "test": "node --check server.js && node --check scripts/seed.js && node --check routes/api.js"
+    "test": "node --check server.js && node --check controllers/apiController.js && node --check controllers/pageController.js && node --check routes/api.js && node --check routes/pageRoutes.js && node --check public/js/page-app.js && node --check scripts/seed.js"
   },
   "repository": {
     "type": "git",

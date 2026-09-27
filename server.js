@@ -4,8 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const connectDB = require('./config/db');
 const apiRoutes = require('./routes/api');
-const htmlPages = require('./middleware/htmlPages');
-const pageFlow = require('./middleware/pageFlow');
+const pageRoutes = require('./routes/pageRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,8 +18,7 @@ connectDB();
 app.use('/api', apiRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(pageFlow);
-app.use('/pages', htmlPages);
+app.use('/', pageRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((error, req, res, next) => {
   if (error.code === 'LIMIT_FILE_SIZE') {
@@ -39,7 +37,7 @@ app.use((error, req, res, next) => {
 });
 
 app.get(/^(?!\/api).*/, (req, res) => {
-  return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  return res.status(404).send('Page not found.');
 });
 
 app.listen(PORT, () => {

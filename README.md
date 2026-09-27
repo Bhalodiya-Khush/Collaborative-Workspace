@@ -104,13 +104,20 @@ The database is built with Mongoose and includes these collections:
 - `server.js` - main Express server
 - `config/db.js` - MongoDB connection configuration
 - `models/` - Mongoose schemas
-- `routes/api.js` - API endpoints for users, workspaces, projects, tasks, submissions, meetings, chat and notifications
+- `routes/` - maps browser and API URLs to controller methods
+- `controllers/apiController.js` - API request handlers and application logic
+- `controllers/pageController.js` - serves the corresponding HTML view for each browser page
+- `views/` - standalone `.html` pages for login, registration, dashboard, and each feature page
+- `routes/api.js` - API endpoint definitions
+- `routes/pageRoutes.js` - browser page routes
 - `middleware/auth.js` - JWT verification middleware for protected API routes
 - `middleware/roles.js` - role-based authorization middleware
 - `middleware/projectAccess.js` - project membership and project-manager access checks
 - `middleware/upload.js` - source-code and ZIP upload validation/storage
-- `public/` - simple HTML/CSS/JS frontend for testing the basic workflow
+- `public/` - browser-side JavaScript and static assets
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
+
+The application uses MVC separation: Mongoose models represent data, route modules map URLs and middleware to controller methods, controllers handle requests, and standalone HTML files provide the views. The `/api/*` endpoints continue to return JSON.
 
 ## Setup instructions
 
@@ -149,7 +156,7 @@ After successful login, the browser stores the JWT and opens:
 GET /dashboard
 ```
 
-The dashboard loads the authenticated user, system counts, accessible projects, tasks, and notifications. These pages use plain HTML returned with `res.send()` from Express middleware and do not use CSS. The existing `/api/*` JSON endpoints remain available for all data operations.
+The dashboard loads the authenticated user, system counts, accessible projects, tasks, and notifications. Browser routes are handled by `routes/pageRoutes.js`; `controllers/pageController.js` serves their standalone HTML files from `views/`. Page behavior is in `public/js/page-app.js`. The pages use plain HTML without CSS. The existing `/api/*` JSON endpoints remain available for all data operations.
 
 Additional plain HTML data pages are available after login:
 
@@ -174,7 +181,7 @@ The module pages now also contain plain HTML forms for the implemented operation
 - Workspaces: create a workspace
 - Projects: create and update project details/progress
 - Tasks: create, assign, update status, and update progress
-- Submissions: upload source files or ZIP files
+- Submissions: upload source files or ZIP files, track branch names, and review code submissions with approve/request-changes actions
 - Meetings: schedule meetings
 - Messages: send project/workspace messages
 - Notifications: create and view notifications
@@ -199,19 +206,29 @@ Projects can only be created with a project manager and developers who are alrea
 
 The migration command is non-destructive. It backfills existing workspace members, user workspace/project references, project member records, and a database migration activity entry without deleting users, workspaces, projects, tasks, or submissions.
 
-## Server-rendered HTML pages
+## HTML views
 
-The API remains JSON-based, while the following browser-friendly route is handled by Express middleware:
+The page router serves static HTML views for the following browser routes:
 
 ```text
+GET /
+GET /login
+GET /register
+GET /dashboard
+GET /users
+GET /workspaces
+GET /projects
+GET /monitoring
+GET /reports
+GET /tasks
+GET /submissions
+GET /meetings
+GET /messages
+GET /notifications
 GET /pages
-GET /pages/health
-GET /pages/dashboard
-GET /pages/projects
-GET /pages/tasks
 ```
 
-Any `/pages...` request returns a simple HTML response containing the requested URL and links to the available server pages. This keeps the `/api/*` JSON endpoints compatible with the existing HTML frontend.
+The `/pages` route links to the browser views. API routes remain separate under `/api` and return JSON.
 
 ## API endpoints
 

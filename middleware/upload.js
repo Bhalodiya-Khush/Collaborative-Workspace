@@ -15,7 +15,7 @@ const storage = multer.diskStorage({
 
 const allowedExtensions = new Set([
   '.zip', '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json',
-  '.java', '.py', '.c', '.cpp', '.h', '.md', '.txt',
+  '.java', '.py', '.c', '.cpp', '.h', '.md', '.txt','.cs',
 ]);
 
 const fileFilter = (req, file, callback) => {

@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Collaborative Workspace - Reports</title></head>
+<body data-page="reports">
+  <main><h1>Project Performance Reports</h1><nav><a href="/dashboard">Dashboard</a> | <a href="/projects">Projects</a> | <a href="/monitoring">Monitoring</a></nav>
+    <p>Generate a progress and task report for a project.</p>
+    <form id="reportForm"><p><label>Project ID<br><input name="projectId" required></label></p><button type="submit">Generate report</button></form>
+    <p id="message" aria-live="polite"></p><pre id="data"></pre>
+  </main><script src="/js/page-app.js" defer></script>
+</body>
+</html>
