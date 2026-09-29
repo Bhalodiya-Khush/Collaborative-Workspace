@@ -1,0 +1,26 @@
+<%- include('partials/header', { title: 'Submissions', page: 'submissions', user }) %>
+<h2>Code submissions</h2>
+<p>Submission records and downloads are scoped to accessible projects.</p>
+<% if (user.role === 'developer') { %>
+  <section>
+    <h3>Submit code</h3>
+    <form id="submissionForm" enctype="multipart/form-data">
+      <p><label>Project ID<br><input name="project" required></label></p><p><label>Task ID<br><input name="task" required></label></p>
+      <p><label>Submission title<br><input name="title" required></label></p><p><label>Description<br><textarea name="description"></textarea></label></p>
+      <p><label>Branch name<br><input name="branchName"></label></p><p><label>Source files or ZIP (max 10 files)<br><input type="file" name="files" multiple></label></p>
+      <button type="submit">Upload submission</button>
+    </form>
+  </section>
+<% } %>
+<% if (['admin', 'project_manager'].includes(user.role)) { %>
+  <section>
+    <h3>Review submission</h3>
+    <form id="submissionReviewForm">
+      <p><label>Submission ID<br><input name="submissionId" required></label></p>
+      <p><label>Decision<br><select name="reviewStatus" required><option value="approved">Approve</option><option value="changes_requested">Request changes</option></select></label></p>
+      <p><label>Review notes<br><textarea name="reviewNotes"></textarea></label></p><button type="submit">Submit review</button>
+    </form>
+  </section>
+<% } %>
+<ul id="submissions"><li>Loading submissions...</li></ul>
+<%- include('partials/footer') %>

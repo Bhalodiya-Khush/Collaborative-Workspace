@@ -1,0 +1,35 @@
+<%- include('partials/header', { title: 'Workspaces', page: 'workspaces', user }) %>
+<h2>Workspaces</h2>
+<p>Only workspaces you belong to are listed. Workspace ownership and membership are checked by the API.</p>
+<% if (user.role === 'admin') { %>
+  <section>
+    <h3>Create workspace</h3>
+    <form id="workspaceForm">
+      <p><label>Workspace name<br><input name="name" required></label></p>
+      <p><label>Description<br><textarea name="description"></textarea></label></p>
+      <p><label>Owner user ID<br><input name="owner" required></label></p>
+      <p><label>Initial member IDs (comma separated)<br><input name="members"></label></p>
+      <button type="submit">Create workspace</button>
+    </form>
+  </section>
+  <section>
+    <h3>Manage workspace membership</h3>
+    <form id="memberForm">
+      <p><label>Workspace ID<br><input name="workspaceId" required></label></p>
+      <p><label>Member user ID<br><input name="userId" required></label></p>
+      <button type="submit">Add member</button>
+    </form>
+    <form id="roleForm">
+      <p><label>Workspace ID<br><input name="roleWorkspaceId" required></label></p>
+      <p><label>Member user ID<br><input name="roleUserId" required></label></p>
+      <p><label>Role<br><select name="role" required><option>project_manager</option><option>developer</option><option>viewer</option></select></label></p>
+      <button type="submit">Assign role</button>
+    </form>
+  </section>
+<% } %>
+<section>
+  <h3>Workspace activity</h3>
+  <form id="activityForm"><p><label>Workspace ID<br><input name="workspaceId" required></label></p><button type="submit">Load activity</button></form>
+</section>
+<ul id="workspaces"><li>Loading workspaces...</li></ul>
+<%- include('partials/footer') %>

@@ -1,0 +1,49 @@
+<%- include('partials/header', { title: 'Projects', page: 'projects', user }) %>
+<h2>Projects</h2>
+<p>Projects are limited to those available to your account.</p>
+<% if (user.role === 'admin') { %>
+  <section>
+    <h3>Create project</h3>
+    <form id="projectForm">
+      <p><label>Project name<br><input name="name" required></label></p>
+      <p><label>Description<br><textarea name="description"></textarea></label></p>
+      <p><label>Workspace ID<br><input name="workspace" required></label></p>
+      <p><label>Project manager user ID<br><input name="projectManager" required></label></p>
+      <p><label>Developer IDs (comma separated)<br><input name="developers"></label></p>
+      <button type="submit">Create project</button>
+    </form>
+  </section>
+<% } %>
+<% if (['admin', 'project_manager'].includes(user.role)) { %>
+  <section>
+    <h3>Update project</h3>
+    <form id="projectUpdateForm">
+      <p><label>Project ID<br><input name="projectId" required></label></p>
+      <p><label>New name<br><input name="name"></label></p>
+      <p><label>Status<br><select name="status"><option value="">Keep current status</option><option>planning</option><option>in_progress</option><option>review</option><option>completed</option><option>on_hold</option></select></label></p>
+      <p><label>Progress 0-100<br><input name="progress" type="number" min="0" max="100"></label></p>
+      <button type="submit">Update project</button>
+    </form>
+  </section>
+  <section>
+    <h3>Manage project members</h3>
+    <form id="projectMemberForm">
+      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>User ID<br><input name="userId" required></label></p>
+      <p><label>Role<br><select name="role"><option>developer</option><option>reviewer</option><option>guest</option></select></label></p>
+      <p><label>Access level<br><select name="accessLevel"><option>write</option><option>read</option></select></label></p>
+      <button type="submit">Add project member</button>
+    </form>
+    <form id="projectMemberRoleForm">
+      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>Member user ID<br><input name="userId" required></label></p>
+      <p><label>Role<br><select name="role"><option>developer</option><option>reviewer</option><option>guest</option></select></label></p>
+      <p><label>Access level<br><select name="accessLevel"><option>write</option><option>read</option></select></label></p>
+      <button type="submit">Update member role</button>
+    </form>
+    <form id="projectMemberRemoveForm">
+      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>Member user ID<br><input name="userId" required></label></p>
+      <button type="submit">Remove project member</button>
+    </form>
+  </section>
+<% } %>
+<ul id="projects"><li>Loading projects...</li></ul>
+<%- include('partials/footer') %>

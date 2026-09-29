@@ -1,0 +1,20 @@
+<%- include('../partials/header', { title: 'Administrator dashboard', page: 'dashboard', user }) %>
+<h2>Administrator dashboard</h2>
+<p>Manage company workspaces, projects, user roles, and platform activity.</p>
+<section>
+  <h3>System totals</h3>
+  <p id="stats">Loading authorized system totals...</p>
+</section>
+<section>
+  <h3>Projects I manage</h3>
+  <ul id="projects"><li>Loading projects...</li></ul>
+</section>
+<section>
+  <h3>Tasks in my projects</h3>
+  <ul id="tasks"><li>Loading tasks...</li></ul>
+</section>
+<section>
+  <h3>My notifications</h3>
+  <ul id="notifications"><li>Loading notifications...</li></ul>
+</section>
+<%- include('../partials/footer') %>

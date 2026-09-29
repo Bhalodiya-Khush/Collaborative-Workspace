@@ -8,10 +8,19 @@ const apiController = require('../controllers/apiController');
 
 const router = express.Router();
 
+const requireDevelopment = (req, res, next) => {
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ message: 'This endpoint is unavailable.' });
+  }
+
+  return next();
+};
+
 router.get('/health', apiController.handleGetHealth);
-router.get('/dashboard', apiController.handleGetDashboard);
+router.get('/dashboard', requireAuth, apiController.handleGetDashboard);
 router.post('/users/register', apiController.handlePostUsersRegister);
 router.post('/users/login', apiController.handlePostUsersLogin);
+router.post('/users/logout', apiController.handlePostUsersLogout);
 router.get('/users/me', requireAuth, apiController.handleGetUsersMe);
 router.get('/users', requireAuth, allowRoles('admin', 'project_manager'), apiController.handleGetUsers);
 router.patch('/users/:userId/role', requireAuth, allowRoles('admin'), apiController.handlePatchUsersUserIdRole);
@@ -36,16 +45,17 @@ router.patch('/tasks/:taskId/assign', requireAuth, allowRoles('admin', 'project_
 router.patch('/tasks/:taskId/status', requireAuth, apiController.handlePatchTasksTaskIdStatus);
 router.patch('/tasks/:taskId/progress', requireAuth, apiController.handlePatchTasksTaskIdProgress);
 router.get('/tasks', requireAuth, apiController.handleGetTasks);
-router.post('/tasks/deadline-alerts', requireAuth, apiController.handlePostTasksDeadlineAlerts);
+router.post('/tasks/deadline-alerts', requireAuth, allowRoles('admin', 'project_manager'), apiController.handlePostTasksDeadlineAlerts);
 router.post('/submissions', requireAuth, allowRoles('developer'), uploadSubmissionFiles.array('files', 10), requireProjectAccess, apiController.handlePostSubmissions);
 router.get('/submissions', requireAuth, apiController.handleGetSubmissions);
+router.get('/files/:fileName', requireAuth, apiController.handleGetSubmissionFile);
 router.patch('/submissions/:submissionId/review', requireAuth, allowRoles('admin', 'project_manager'), apiController.handlePatchSubmissionsSubmissionIdReview);
-router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'developer'), apiController.handlePostMeetings);
+router.post('/meetings', requireAuth, allowRoles('admin', 'project_manager', 'developer'), requireWorkspaceAccess, apiController.handlePostMeetings);
 router.get('/meetings', requireAuth, apiController.handleGetMeetings);
-router.post('/messages', requireAuth, allowRoles('admin', 'project_manager', 'developer'), apiController.handlePostMessages);
+router.post('/messages', requireAuth, allowRoles('admin', 'project_manager', 'developer'), requireWorkspaceAccess, apiController.handlePostMessages);
 router.get('/messages', requireAuth, apiController.handleGetMessages);
 router.post('/notifications', requireAuth, allowRoles('admin', 'project_manager'), apiController.handlePostNotifications);
 router.get('/notifications', requireAuth, apiController.handleGetNotifications);
-router.post('/seed', apiController.handlePostSeed);
+router.post('/seed', requireDevelopment, requireAuth, allowRoles('admin'), apiController.handlePostSeed);
 
 module.exports = router;

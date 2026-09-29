@@ -1,0 +1,15 @@
+<%- include('partials/header', { title: 'Meetings', page: 'meetings', user }) %>
+<h2>Meetings</h2>
+<% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
+  <section>
+    <h3>Schedule meeting</h3>
+    <form id="meetingForm">
+      <p><label>Meeting title<br><input name="title" required></label></p><p><label>Project ID (optional)<br><input name="project"></label></p>
+      <p><label>Workspace ID<br><input name="workspace" required></label></p><p><label>Scheduled time<br><input name="scheduledAt" type="datetime-local" required></label></p>
+      <p><label>Attendee user IDs (comma separated)<br><input name="attendees"></label></p><p><label>Agenda<br><textarea name="agenda"></textarea></label></p>
+      <button type="submit">Schedule meeting</button>
+    </form>
+  </section>
+<% } %>
+<ul id="meetings"><li>Loading meetings...</li></ul>
+<%- include('partials/footer') %>

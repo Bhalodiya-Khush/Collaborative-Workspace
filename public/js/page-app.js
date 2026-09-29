@@ -9,6 +9,27 @@
     if (dataElement) dataElement.textContent = JSON.stringify(data, null, 2);
   };
 
+  const renderList = (id, items, emptyMessage, renderItem) => {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.replaceChildren();
+    if (!items.length) {
+      const emptyItem = document.createElement('li');
+      emptyItem.textContent = emptyMessage;
+      list.append(emptyItem);
+      return;
+    }
+    items.forEach((item) => {
+      const listItem = document.createElement('li');
+      renderItem(listItem, item);
+      list.append(listItem);
+    });
+  };
+
+  const textWithId = (item, value, id) => {
+    item.textContent = `${value} (ID: ${id})`;
+  };
+
   const fail = (error) => {
     if (messageElement) messageElement.textContent = error.message;
   };
@@ -51,13 +72,6 @@
 
   const formValues = (formData) => Object.fromEntries(formData.entries());
   const jsonRequest = (method, body) => ({ method, body: JSON.stringify(body) });
-  const load = async (endpoint) => {
-    try {
-      show(await api(endpoint));
-    } catch (error) {
-      fail(error);
-    }
-  };
 
   if (page === 'login') {
     bindSubmit('loginForm', async (formData) => {
@@ -72,6 +86,7 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed.');
       localStorage.setItem(tokenKey, data.token);
+      if (data.user?.role) localStorage.setItem('collaborativeWorkspaceRole', data.user.role);
       window.location.href = '/dashboard';
     });
     return;
@@ -100,10 +115,7 @@
       return;
     }
 
-    document.getElementById('logoutButton').addEventListener('click', () => {
-      localStorage.removeItem(tokenKey);
-      window.location.href = '/login';
-    });
+    bindLogout();
 
     Promise.all([
       api('/api/users/me'),
@@ -113,34 +125,44 @@
       api('/api/notifications'),
     ]).then(([userData, stats, projects, tasks, notifications]) => {
       if (!userData) return;
-      document.getElementById('userDetails').textContent =
-        `${userData.user.fullName} | ${userData.user.email} | Role: ${userData.user.role}`;
-      document.getElementById('stats').textContent =
-        `Users: ${stats.totalUsers} | Workspaces: ${stats.totalWorkspaces} | Projects: ${stats.totalProjects} | Tasks: ${stats.totalTasks}`;
-
-      const renderList = (id, items, format, emptyMessage) => {
-        const list = document.getElementById(id);
-        list.replaceChildren();
-        if (!items.length) {
-          const item = document.createElement('li');
-          item.textContent = emptyMessage;
-          list.append(item);
-          return;
-        }
-        items.forEach((value) => {
-          const item = document.createElement('li');
-          item.textContent = format(value);
-          list.append(item);
-        });
-      };
-      renderList('projects', projects, (project) => `${project.name} - ${project.status}`, 'No projects available.');
-      renderList('tasks', tasks, (task) => `${task.title} - ${task.status} - ${task.completionPercentage}%`, 'No tasks available.');
-      renderList('notifications', notifications, (notification) => `${notification.title}: ${notification.message}`, 'No notifications.');
+      localStorage.setItem('collaborativeWorkspaceRole', userData.user.role);
+      const statsElement = document.getElementById('stats');
+      if (statsElement) {
+        const values = userData.user.role === 'admin'
+          ? [`Users: ${stats.totalUsers}`, `Workspaces: ${stats.totalWorkspaces}`, `Projects: ${stats.totalProjects}`, `Tasks: ${stats.totalTasks}`]
+          : [`Projects: ${stats.totalProjects}`, `Tasks: ${stats.totalTasks}`, `Completed tasks: ${stats.totalCompletedTasks}`, `Submissions: ${stats.totalSubmissions}`];
+        statsElement.textContent = values.join(' | ');
+      }
+      renderList('projects', projects, 'No accessible projects.', (item, project) => {
+        textWithId(item, `${project.name} — ${project.status}`, project._id);
+      });
+      renderList('tasks', tasks, 'No tasks are assigned or available to you.', (item, task) => {
+        textWithId(item, `${task.title} — ${task.status} — ${task.completionPercentage}%`, task._id);
+      });
+      renderList('notifications', notifications, 'No notifications.', (item, notification) => {
+        item.textContent = `${notification.title}: ${notification.message}`;
+      });
     }).catch((error) => {
-      document.getElementById('userDetails').textContent = error.message;
+      fail(error);
     });
     return;
   }
+
+  function bindLogout() {
+    const logoutButton = document.getElementById('logoutButton');
+    if (!logoutButton) return;
+    logoutButton.addEventListener('click', async () => {
+      try {
+        await fetch('/api/users/logout', { method: 'POST' });
+      } finally {
+        localStorage.removeItem(tokenKey);
+        localStorage.removeItem('collaborativeWorkspaceRole');
+        window.location.href = '/login';
+      }
+    });
+  }
+
+  bindLogout();
 
   const endpoints = {
     users: '/api/users',
@@ -154,7 +176,62 @@
     messages: '/api/messages',
     notifications: '/api/notifications',
   };
-  if (endpoints[page]) load(endpoints[page]);
+  const listTargets = {
+    users: ['users', 'No users are visible to this account.', (item, user) => {
+      textWithId(item, `${user.fullName} — ${user.email} — ${user.role}`, user._id);
+    }],
+    workspaces: ['workspaces', 'No workspaces are available to this account.', (item, workspace) => {
+      const members = Array.isArray(workspace.members) ? workspace.members.length : 0;
+      textWithId(item, `${workspace.name} — ${members} members`, workspace._id);
+    }],
+    projects: ['projects', 'No projects are available to this account.', (item, project) => {
+      textWithId(item, `${project.name} — ${project.status} — ${project.progress}%`, project._id);
+    }],
+    tasks: ['tasks', 'No tasks are assigned or available to you.', (item, task) => {
+      textWithId(item, `${task.title} — ${task.status} — ${task.completionPercentage}%`, task._id);
+    }],
+    submissions: ['submissions', 'No submissions are available to this account.', (item, submission) => {
+      textWithId(item, `${submission.title} — ${submission.reviewStatus} — ${submission.branchName || 'no branch'}`, submission._id);
+      (submission.files || []).forEach((file) => {
+        const link = document.createElement('a');
+        const storedPath = new URL(file.downloadUrl, window.location.origin).pathname;
+        const fileName = storedPath.split('/').pop();
+        link.href = `/api/files/${encodeURIComponent(decodeURIComponent(fileName))}`;
+        link.textContent = `Download ${file.fileName}`;
+        link.setAttribute('download', file.fileName);
+        item.append(document.createElement('br'), link);
+      });
+    }],
+    meetings: ['meetings', 'No meetings are available to this account.', (item, meeting) => {
+      textWithId(item, `${meeting.title} — ${new Date(meeting.scheduledAt).toLocaleString()} — ${meeting.status}`, meeting._id);
+    }],
+    messages: ['messages', 'No messages are available to this account.', (item, message) => {
+      textWithId(item, `${message.sender?.fullName || 'Member'}: ${message.content}`, message._id);
+    }],
+    notifications: ['notifications', 'No notifications.', (item, notification) => {
+      textWithId(item, `${notification.title}: ${notification.message}`, notification._id);
+    }],
+  };
+  const load = async (endpoint, target = listTargets[page]) => {
+    try {
+      const result = await api(endpoint);
+      if (target && Array.isArray(result)) {
+        renderList(target[0], result, target[1], target[2]);
+      } else {
+        show(result);
+      }
+    } catch (error) {
+      fail(error);
+    }
+  };
+  if (endpoints[page] && page !== 'dashboard') {
+    const target = page === 'monitoring'
+      ? ['monitoringProjects', 'No accessible projects.', listTargets.projects[2]]
+      : page === 'reports'
+        ? ['reportProjects', 'No accessible projects.', listTargets.projects[2]]
+        : listTargets[page];
+    load(endpoints[page], target);
+  }
 
   if (page === 'users') {
     bindSubmit('roleForm', async (formData) => {
@@ -175,8 +252,8 @@
     });
     bindSubmit('roleForm', async (formData) => {
       const values = formValues(formData);
-      show(await api(`/api/workspaces/${encodeURIComponent(values.workspaceId)}/role`, jsonRequest('PATCH', {
-        userId: values.userId,
+      show(await api(`/api/workspaces/${encodeURIComponent(values.roleWorkspaceId)}/role`, jsonRequest('PATCH', {
+        userId: values.roleUserId,
         role: values.role,
       })));
     });
@@ -198,6 +275,21 @@
       delete values.projectId;
       if (values.progress === '') delete values.progress;
       show(await api(`/api/projects/${encodeURIComponent(projectId)}`, jsonRequest('PATCH', values)));
+    });
+    bindSubmit('projectMemberForm', async (formData) => {
+      const values = formValues(formData);
+      const projectId = values.projectId;
+      delete values.projectId;
+      show(await api(`/api/projects/${encodeURIComponent(projectId)}/members`, jsonRequest('POST', values)));
+    });
+    bindSubmit('projectMemberRoleForm', async (formData) => {
+      const values = formValues(formData);
+      const { projectId, userId, ...role } = values;
+      show(await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}/role`, jsonRequest('PATCH', role)));
+    });
+    bindSubmit('projectMemberRemoveForm', async (formData) => {
+      const { projectId, userId } = formValues(formData);
+      show(await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }));
     });
   }
 
@@ -235,6 +327,17 @@
       const values = formValues(formData);
       show(await api(`/api/tasks/${encodeURIComponent(values.taskId)}/assign`, jsonRequest('PATCH', { assignee: values.assignee })));
     });
+    bindSubmit('taskFilterForm', async (formData) => {
+      const values = formValues(formData);
+      const query = new URLSearchParams(
+        Object.entries(values).filter(([, value]) => Boolean(value))
+      );
+      await load(`/api/tasks?${query.toString()}`, listTargets.tasks);
+    });
+    bindSubmit('deadlineAlertForm', async (formData) => {
+      const values = formValues(formData);
+      show(await api('/api/tasks/deadline-alerts', jsonRequest('POST', { days: Number(values.days) })));
+    });
   }
 
   if (page === 'submissions') {
@@ -259,11 +362,19 @@
 
   if (page === 'meetings') {
     bindSubmit('meetingForm', async (formData) => {
-      show(await api('/api/meetings', jsonRequest('POST', formValues(formData))));
+      const values = formValues(formData);
+      values.attendees = values.attendees ? values.attendees.split(',').map((id) => id.trim()).filter(Boolean) : [];
+      if (!values.project) delete values.project;
+      show(await api('/api/meetings', jsonRequest('POST', values)));
     });
   }
 
   if (page === 'messages') {
+    bindSubmit('messageFilterForm', async (formData) => {
+      const { projectId } = formValues(formData);
+      const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+      await load(`/api/messages${query}`, listTargets.messages);
+    });
     bindSubmit('messageForm', async (formData) => {
       const values = formValues(formData);
       if (!values.project) delete values.project;

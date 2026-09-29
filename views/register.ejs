@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Collaborative Workspace - Registration</title></head>
+<body data-page="register">
+  <main>
+    <h1>Collaborative Workspace</h1>
+    <h2>Create account</h2>
+    <p>New accounts are registered as developers. An administrator can assign other roles.</p>
+    <p id="message" aria-live="polite"></p>
+    <form id="registerForm">
+      <p><label>Full name<br><input type="text" name="fullName" required autocomplete="name"></label></p>
+      <p><label>Email<br><input type="email" name="email" required autocomplete="email"></label></p>
+      <p><label>Password<br><input type="password" name="password" required autocomplete="new-password"></label></p>
+      <button type="submit">Register</button>
+    </form>
+    <p>Already registered? <a href="/login">Back to login</a></p>
+  </main>
+  <script src="/js/page-app.js" defer></script>
+</body>
+</html>

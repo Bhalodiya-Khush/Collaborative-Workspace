@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | Collaborative Workspace</title>
+</head>
+<body data-page="<%= page %>" data-role="<%= user.role %>">
+  <header>
+    <h1>Collaborative Workspace</h1>
+    <p><%= user.fullName %> · <%= user.role.replace('_', ' ') %></p>
+    <nav aria-label="Main navigation">
+      <a href="/dashboard">Dashboard</a> |
+      <a href="/projects">Projects</a> |
+      <a href="/tasks">Tasks</a> |
+      <a href="/submissions">Submissions</a> |
+      <a href="/meetings">Meetings</a> |
+      <% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
+        <a href="/messages">Messages</a> |
+      <% } %>
+      <a href="/notifications">Notifications</a> |
+      <a href="/monitoring">Monitoring</a> |
+      <a href="/reports">Reports</a> |
+      <a href="/workspaces">Workspaces</a>
+      <% if (['admin', 'project_manager'].includes(user.role)) { %>
+        | <a href="/users">Users</a>
+      <% } %>
+      <button id="logoutButton" type="button">Logout</button>
+    </nav>
+  </header>
+  <main>

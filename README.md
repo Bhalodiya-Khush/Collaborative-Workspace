@@ -107,7 +107,7 @@ The database is built with Mongoose and includes these collections:
 - `routes/` - maps browser and API URLs to controller methods
 - `controllers/apiController.js` - API request handlers and application logic
 - `controllers/pageController.js` - serves the corresponding HTML view for each browser page
-- `views/` - standalone `.html` pages for login, registration, dashboard, and each feature page
+- `views/` - EJS templates for login, registration, role-specific dashboards, and feature pages
 - `routes/api.js` - API endpoint definitions
 - `routes/pageRoutes.js` - browser page routes
 - `middleware/auth.js` - JWT verification middleware for protected API routes
@@ -117,7 +117,7 @@ The database is built with Mongoose and includes these collections:
 - `public/` - browser-side JavaScript and static assets
 - `scripts/seed.js` - seed demo data for admin, manager, developers and sample workspace/project/task records
 
-The application uses MVC separation: Mongoose models represent data, route modules map URLs and middleware to controller methods, controllers handle requests, and standalone HTML files provide the views. The `/api/*` endpoints continue to return JSON.
+The application uses MVC separation: Mongoose models represent data, route modules map URLs and middleware to controller methods, controllers handle requests, and EJS templates render role-aware pages. The `/api/*` endpoints continue to return JSON.
 
 ## Setup instructions
 
@@ -156,7 +156,7 @@ After successful login, the browser stores the JWT and opens:
 GET /dashboard
 ```
 
-The dashboard loads the authenticated user, system counts, accessible projects, tasks, and notifications. Browser routes are handled by `routes/pageRoutes.js`; `controllers/pageController.js` serves their standalone HTML files from `views/`. Page behavior is in `public/js/page-app.js`. The pages use plain HTML without CSS. The existing `/api/*` JSON endpoints remain available for all data operations.
+The dashboard is selected by authenticated role (`admin`, `project_manager`, `developer`, or `viewer`). Browser routes are handled by `routes/pageRoutes.js`; `middleware/pageAuth.js` verifies the HttpOnly login cookie and `controllers/pageController.js` renders EJS templates from `views/`. Page behavior is in `public/js/page-app.js`. Navigation and forms are rendered only for relevant roles; API authorization remains authoritative. Dashboard and feature data comes from the signed-in user's accessible records, not hard-coded demonstration rows.
 
 Additional plain HTML data pages are available after login:
 
@@ -206,9 +206,9 @@ Projects can only be created with a project manager and developers who are alrea
 
 The migration command is non-destructive. It backfills existing workspace members, user workspace/project references, project member records, and a database migration activity entry without deleting users, workspaces, projects, tasks, or submissions.
 
-## HTML views
+## EJS views
 
-The page router serves static HTML views for the following browser routes:
+The page router renders EJS views for the following browser routes:
 
 ```text
 GET /
@@ -228,14 +228,15 @@ GET /notifications
 GET /pages
 ```
 
-The `/pages` route links to the browser views. API routes remain separate under `/api` and return JSON.
+The `/pages` route links to the browser views. API routes remain separate under `/api` and return JSON. A successful login sets an HttpOnly session cookie for protected page rendering while retaining the bearer token used by the browser API client.
 
 ## API endpoints
 
 - GET /api/health
-- GET /api/dashboard
+- GET /api/dashboard (JWT required)
 - POST /api/users/register
 - POST /api/users/login
+- POST /api/users/logout
 - GET /api/users/me (JWT required)
 - PATCH /api/users/:userId/role (admin JWT required)
 - GET /api/users
@@ -255,8 +256,9 @@ The `/pages` route links to the browser views. API routes remain separate under 
 - PATCH /api/tasks/:taskId/progress
 - GET /api/tasks?status=in_progress&priority=high&due=upcoming&search=dashboard
 - POST /api/tasks/deadline-alerts
-- POST /api/submissions (developer must belong to the project)
+- POST /api/submissions (developer must belong to the project and be assigned the task)
 - GET /api/submissions (only submissions from accessible projects)
+- GET /api/files/:fileName (JWT and project access required)
 - PATCH /api/submissions/:submissionId/review
 - POST /api/meetings
 - GET /api/meetings
@@ -264,7 +266,9 @@ The `/pages` route links to the browser views. API routes remain separate under 
 - GET /api/messages
 - POST /api/notifications
 - GET /api/notifications
-- POST /api/seed
+- POST /api/seed (development only; admin JWT required)
+
+The dashboard counts are available to signed-in users. The API seed endpoint is hidden unless `NODE_ENV=development`, requires an admin token, and never returns user password fields. Do not enable development mode in production.
 
 ## JWT authentication
 
@@ -314,7 +318,7 @@ Field: branchName
 Files field: files
 ```
 
-Each file is limited to 25 MB. Uploaded files are stored in the local `uploads/` directory and their metadata is saved in `Submission.files`. Download URLs are returned as `/uploads/<stored-file-name>`.
+Each file is limited to 25 MB. Uploaded files are stored in the local `uploads/` directory and their metadata is saved in `Submission.files`. Files download through the authenticated `/api/files/:fileName` route, which checks the caller's access to the submission's project.
 
 ## Task filtering and deadline alerts
 

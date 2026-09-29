@@ -1,0 +1,20 @@
+<%- include('../partials/header', { title: 'Project manager dashboard', page: 'dashboard', user }) %>
+<h2>Project manager dashboard</h2>
+<p>Coordinate assigned projects, project members, tasks, reviews, and reports.</p>
+<section>
+  <h3>My project totals</h3>
+  <p id="stats">Loading your project totals...</p>
+</section>
+<section>
+  <h3>Projects I manage</h3>
+  <ul id="projects"><li>Loading projects...</li></ul>
+</section>
+<section>
+  <h3>Project tasks</h3>
+  <ul id="tasks"><li>Loading tasks...</li></ul>
+</section>
+<section>
+  <h3>My notifications</h3>
+  <ul id="notifications"><li>Loading notifications...</li></ul>
+</section>
+<%- include('../partials/footer') %>

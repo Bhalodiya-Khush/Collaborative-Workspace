@@ -1,0 +1,13 @@
+<%- include('partials/header', { title: 'Notifications', page: 'notifications', user }) %>
+<h2>My notifications</h2>
+<% if (['admin', 'project_manager'].includes(user.role)) { %>
+  <section>
+    <h3>Create notification</h3>
+    <form id="notificationForm"><p><label>Recipient user ID<br><input name="user" required></label></p>
+      <p><label>Title<br><input name="title" required></label></p><p><label>Message<br><textarea name="message" required></textarea></label></p>
+      <button type="submit">Create notification</button>
+    </form>
+  </section>
+<% } %>
+<ul id="notifications"><li>Loading notifications...</li></ul>
+<%- include('partials/footer') %>

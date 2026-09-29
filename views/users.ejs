@@ -1,0 +1,15 @@
+<%- include('partials/header', { title: 'Users', page: 'users', user }) %>
+<h2>Users</h2>
+<p>Users visible to your role and project access.</p>
+<% if (user.role === 'admin') { %>
+  <section>
+    <h3>Assign a platform role</h3>
+    <form id="roleForm">
+      <p><label>User ID<br><input name="userId" required></label></p>
+      <p><label>Role<br><select name="role" required><option value="project_manager">Project manager</option><option value="developer">Developer</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></label></p>
+      <button type="submit">Update role</button>
+    </form>
+  </section>
+<% } %>
+<ul id="users"><li>Loading users...</li></ul>
+<%- include('partials/footer') %>

@@ -1,0 +1,5 @@
+<%- include('partials/header', { title: 'Project reports', page: 'reports', user }) %>
+<h2>Project performance reports</h2><p>Generate a report only for a project accessible to your account.</p>
+<form id="reportForm"><p><label>Project ID<br><input name="projectId" required></label></p><button type="submit">Generate report</button></form>
+<ul id="reportProjects"><li>Loading accessible projects...</li></ul>
+<%- include('partials/footer') %>

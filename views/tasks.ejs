@@ -1,0 +1,41 @@
+<%- include('partials/header', { title: 'Tasks', page: 'tasks', user }) %>
+<h2>Tasks</h2>
+<p>Task lists are restricted to your projects; developers see tasks assigned to them.</p>
+<% if (['admin', 'project_manager'].includes(user.role)) { %>
+  <section>
+    <h3>Create task</h3>
+    <form id="taskForm">
+      <p><label>Task title<br><input name="title" required></label></p><p><label>Description<br><textarea name="description"></textarea></label></p>
+      <p><label>Project ID<br><input name="project" required></label></p><p><label>Workspace ID<br><input name="workspace" required></label></p>
+      <p><label>Assignee user ID<br><input name="assignee"></label></p>
+      <p><label>Priority<br><select name="priority"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select></label></p>
+      <p><label>Due date<br><input name="dueDate" type="date"></label></p><button type="submit">Create task</button>
+    </form>
+    <h3>Assign task</h3>
+    <form id="taskAssignForm"><p><label>Task ID<br><input name="taskId" required></label></p><p><label>Developer user ID<br><input name="assignee" required></label></p><button type="submit">Assign task</button></form>
+  </section>
+<% } %>
+<% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
+  <section>
+    <h3>Update task</h3>
+    <form id="taskUpdateForm"><p><label>Task ID<br><input name="taskId" required></label></p>
+      <p><label>Status<br><select name="status"><option value="">Keep current status</option><option>todo</option><option>in_progress</option><option>in_review</option><% if (user.role !== 'developer') { %><option>completed</option><% } %><option>blocked</option></select></label></p>
+      <p><label>Progress 0-100<br><input name="completionPercentage" type="number" min="0" max="100"></label></p>
+      <button type="submit">Update task</button>
+    </form>
+  </section>
+<% } %>
+<section>
+  <h3>Filter tasks</h3>
+  <form id="taskFilterForm">
+    <p><label>Project ID<br><input name="projectId"></label></p><p><label>Status<br><select name="status"><option value="">All statuses</option><option>todo</option><option>in_progress</option><option>in_review</option><option>completed</option><option>blocked</option></select></label></p>
+    <p><label>Priority<br><select name="priority"><option value="">All priorities</option><option>low</option><option>medium</option><option>high</option><option>critical</option></select></label></p>
+    <p><label>Search<br><input name="search"></label></p><p><label>Due<br><select name="due"><option value="">Any time</option><option>upcoming</option><option>overdue</option></select></label></p>
+    <button type="submit">Filter</button>
+  </form>
+</section>
+<% if (['admin', 'project_manager'].includes(user.role)) { %>
+  <form id="deadlineAlertForm"><p><label>Alert window (days)<br><input name="days" type="number" min="0" max="30" value="2" required></label></p><button type="submit">Generate deadline alerts</button></form>
+<% } %>
+<ul id="tasks"><li>Loading tasks...</li></ul>
+<%- include('partials/footer') %>

@@ -1,0 +1,16 @@
+<%- include('partials/header', { title: 'Messages', page: 'messages', user }) %>
+<h2>Project and workspace messages</h2>
+<section>
+  <form id="messageFilterForm"><p><label>Project ID (optional)<br><input name="projectId"></label></p><button type="submit">Load messages</button></form>
+</section>
+<% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
+  <section>
+    <h3>Send message</h3>
+    <form id="messageForm"><p><label>Workspace ID<br><input name="workspace" required></label></p><p><label>Project ID (optional)<br><input name="project"></label></p>
+      <p><label>Receiver user ID (optional)<br><input name="receiver"></label></p><p><label>Message<br><textarea name="content" required></textarea></label></p>
+      <button type="submit">Send message</button>
+    </form>
+  </section>
+<% } %>
+<ul id="messages"><li>Loading messages...</li></ul>
+<%- include('partials/footer') %>
