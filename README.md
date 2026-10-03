@@ -182,9 +182,9 @@ The module pages now also contain plain HTML forms for the implemented operation
 - Projects: create and update project details/progress
 - Tasks: create, assign, update status, and update progress
 - Submissions: upload source files or ZIP files, track branch names, and review code submissions with approve/request-changes actions
-- Meetings: schedule meetings
-- Messages: send project/workspace messages
-- Notifications: create and view notifications
+- Meetings: schedule, start, join, and end live project video meetings
+- Messages: persistent real-time group chat for project teams
+- Notifications: create, view, mark read, receive real-time notifications, and generate deadline alerts
 - Monitoring: view task, submission, and activity summaries
 - Reports: generate project performance totals and progress data
 
@@ -193,16 +193,51 @@ All forms send requests to the existing JWT-protected `/api/*` routes. Server-si
 ## Workspace core APIs
 
 ```text
+PATCH  /api/users/me
+PATCH  /api/users/me/password
+PATCH  /api/workspaces/:workspaceId
+PATCH  /api/projects/:projectId/manager
 GET    /api/workspaces/:workspaceId/members
 POST   /api/workspaces/:workspaceId/members
 PATCH  /api/workspaces/:workspaceId/role
 DELETE /api/workspaces/:workspaceId/members/:userId
 GET    /api/workspaces/:workspaceId/activity
+PATCH  /api/tasks/:taskId
 GET    /api/projects/:projectId/monitoring
 GET    /api/projects/:projectId/report
+PATCH  /api/notifications/:notificationId/read
+PATCH  /api/notifications/read-all
 ```
 
-Projects can only be created with a project manager and developers who are already members of the selected workspace. Workspace activity is recorded for workspace membership, role, and project changes.
+Profile edits are restricted to the signed-in user's name, email, profile image URL/path, and skills. Password changes require the current password and invalidate previously issued JWT sessions. Project managers can update task details only within projects they manage; project progress is recalculated from task completion whenever tasks are created or changed. Notification read-state operations are scoped to the signed-in user.
+
+Projects can only be created with a project manager and developers who are already members of the selected active workspace. Admins can reassign a project to another active project manager in its workspace. Removing a workspace developer also removes their project memberships, while removing a project manager is blocked until their managed projects are reassigned. Viewer accounts can read projects in their workspaces but cannot perform write operations. Workspace activity records workspace membership, role, task, submission, and project changes.
+
+## Real-time notifications, project chat, and video meetings
+
+The server exposes authenticated Socket.IO connections for notifications, project group chat, and WebRTC meeting signaling. Project meetings notify the team; an empty attendee list means all project members. Connect to the same server with the bearer JWT in the Socket.IO `auth` payload:
+
+```js
+const socket = io(serverUrl, { auth: { token: bearerJwt } });
+socket.on('notification:new', (notification) => {
+  // Show or refresh the signed-in user's notifications.
+});
+
+socket.emit('project:chat:join', { projectId }, (result) => {
+  if (result.ok) socket.emit('project:chat:send', { projectId, content: 'Hello team' });
+});
+socket.on('project:chat:message', (message) => {
+  // Append the persisted project message to the chat.
+});
+
+socket.emit('meeting:join', { meetingId }, (result) => {
+  // Request camera and microphone access, then establish WebRTC peer connections.
+});
+```
+
+Active project members with write access can send project chat messages. Meeting entry additionally requires an invitation, except for the host, assigned project manager, or admin. Messages are stored in MongoDB before delivery. Meetings use peer-to-peer WebRTC with Socket.IO for authenticated room membership and offer/answer/ICE signaling; a scheduled meeting can be started within 15 minutes of its scheduled time. The mesh is limited to 8 participants per meeting. Browsers require camera/microphone permission and HTTPS (localhost is allowed). `ICE_SERVERS` accepts a JSON array of WebRTC ICE server definitions; the default STUN server can be replaced or supplemented with your organization's STUN/TURN service for reliable connections across restrictive networks.
+
+Sockets validate the user's active status and token version on connection, re-check project membership for chat sends and meeting signaling, and disconnect when the JWT expires, the password changes, or a member loses project access. Project chat and meeting signaling use separate rooms; the new real-time client is for team group chat and does not store meeting recordings.
 
 The migration command is non-destructive. It backfills existing workspace members, user workspace/project references, project member records, and a database migration activity entry without deleting users, workspaces, projects, tasks, or submissions.
 
@@ -262,6 +297,7 @@ The `/pages` route links to the browser views. API routes remain separate under 
 - PATCH /api/submissions/:submissionId/review
 - POST /api/meetings
 - GET /api/meetings
+- PATCH /api/meetings/:meetingId/end (meeting host, assigned project manager, or admin)
 - POST /api/messages
 - GET /api/messages
 - POST /api/notifications
@@ -292,6 +328,8 @@ Authorization: Bearer your.jwt.token
 
 The simple HTML UI stores the token in browser local storage after login, sends it automatically with protected requests, and provides a logout button. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default).
 
+Protected API and page middleware reload the active account from MongoDB and place it on `req.user`; controllers use this trusted server-side identity for owners, task reporters, submission developers, meeting hosts, message senders, and activity actors. Clients must not send or override those actor IDs. Request-supplied IDs identify target resources or recipients only, and are checked against the signed-in user's project/workspace access. Workspace creation always assigns its owner from the authenticated administrator.
+
 ## Role-based authorization
 
 Public registration always creates a `developer` account. This prevents users from granting themselves admin or project manager privileges.
@@ -299,7 +337,7 @@ Public registration always creates a `developer` account. This prevents users fr
 - `admin`: create workspaces and projects, manage users, and create notifications
 - `project_manager`: view users, create tasks, schedule meetings, and create notifications
 - `developer`: view assigned data, submit code, schedule meetings, and send messages
-- `viewer`: read-only access to authenticated GET endpoints
+- `viewer`: read-only access to project data only after explicit project membership; viewers must be added as read-only guests
 
 Project managers can add, remove, and update project members on their assigned projects. Task assignees must be active developers in the project, developers can update only their own assigned tasks, and project managers/admins can review submissions.
 
@@ -328,16 +366,17 @@ Authenticated users can filter tasks using `projectId`, `status`, `priority`, `a
 
 ## Project-level authorization
 
-Project reads and writes are filtered by membership:
+Project access is checked against the active workspace and active `ProjectMember` record. Legacy developer entries are accepted only for projects that have no membership record for that user:
 
 - Admins can access every project.
-- Project managers can access projects where they are the `projectManager`.
-- Developers can access projects where their user ID is in `developers`.
-- Viewers receive no project data until they are explicitly added to a project.
+- Assigned project managers can read, write, review, and manage their projects.
+- Developers with write access can update their assigned tasks and submit code; they cannot manage project membership or project settings.
+- Reviewers can read project data and review submissions, but cannot modify tasks or send chat messages.
+- Guests and explicitly added viewers are read-only. Workspace membership by itself does not grant project access.
 
-Task, submission, meeting, and project chat operations use the project ID to enforce this check. The API also takes the authenticated user from the JWT as the task reporter, submission developer, meeting host, and message sender instead of trusting those identity fields from the browser.
+Task, submission, file-download, meeting, and project chat operations use the same project-access resolver. Socket.IO revalidates access for room joins, chat sends, and meeting signaling. The API takes the authenticated user from the JWT as the task reporter, submission developer, meeting host, and message sender instead of trusting those identity fields from the browser.
 
-Protected write operations return `403 Access denied` when the logged-in user does not have the required role.
+Protected operations return `403` when the user lacks the required permission and `404` when the resource is missing or outside their accessible scope.
 
 ## Future next steps
 

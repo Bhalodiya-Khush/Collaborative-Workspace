@@ -10,6 +10,7 @@ const requireWorkspaceAccess = async (req, res, next) => {
   try {
     const workspace = await Workspace.findOne({
       _id: workspaceId,
+      status: 'active',
       $or: [
         { owner: req.user._id },
         { members: req.user._id },

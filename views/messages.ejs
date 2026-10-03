@@ -1,16 +1,21 @@
 <%- include('partials/header', { title: 'Messages', page: 'messages', user }) %>
-<h2>Project and workspace messages</h2>
-<section>
-  <form id="messageFilterForm"><p><label>Project ID (optional)<br><input name="projectId"></label></p><button type="submit">Load messages</button></form>
-</section>
+<h2>Project team chat</h2>
 <% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
   <section>
-    <h3>Send message</h3>
-    <form id="messageForm"><p><label>Workspace ID<br><input name="workspace" required></label></p><p><label>Project ID (optional)<br><input name="project"></label></p>
-      <p><label>Receiver user ID (optional)<br><input name="receiver"></label></p><p><label>Message<br><textarea name="content" required></textarea></label></p>
-      <button type="submit">Send message</button>
+    <form id="projectChatSelectForm">
+      <label>Project<br><select id="chatProject" name="projectId" required><option value="">Loading projects...</option></select></label>
+      <button type="submit">Open team chat</button>
     </form>
   </section>
 <% } %>
-<ul id="messages"><li>Loading messages...</li></ul>
+<section id="projectChatPanel" hidden>
+  <h3 id="projectChatTitle">Project chat</h3>
+  <p id="projectChatConnection" aria-live="polite"></p>
+  <ul id="project-chat-messages" aria-live="polite"><li>Select a project to open its chat.</li></ul>
+  <form id="projectChatForm">
+    <label>Message<br><textarea name="content" maxlength="4000" required></textarea></label>
+    <button type="submit">Send message</button>
+  </form>
+</section>
+<script src="/socket.io/socket.io.js"></script>
 <%- include('partials/footer') %>

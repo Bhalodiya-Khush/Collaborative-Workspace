@@ -29,7 +29,10 @@ module.exports = {
   renderReports: renderView('reports'),
   renderTasks: renderView('tasks'),
   renderSubmissions: renderView('submissions'),
-  renderMeetings: renderView('meetings'),
+  renderMeetings: (req, res) => res.render('meetings', {
+    user: req.user,
+    iceServers: req.app.locals.iceServers,
+  }),
   renderMessages: renderView('messages'),
   renderNotifications: renderView('notifications'),
   renderPagesIndex: renderView('pages/index'),

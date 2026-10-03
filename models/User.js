@@ -35,6 +35,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
     workspaceIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' }],
     projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
   },

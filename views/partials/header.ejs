@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %> | Collaborative Workspace</title>
 </head>
-<body data-page="<%= page %>" data-role="<%= user.role %>">
+<body data-page="<%= page %>" data-role="<%= user.role %>" data-user-id="<%= user._id %>">
   <header>
     <h1>Collaborative Workspace</h1>
     <p><%= user.fullName %> · <%= user.role.replace('_', ' ') %></p>
