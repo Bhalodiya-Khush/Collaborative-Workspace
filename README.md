@@ -158,7 +158,7 @@ GET /dashboard
 
 The dashboard is selected by authenticated role (`admin`, `project_manager`, `developer`, or `viewer`). Browser routes are handled by `routes/pageRoutes.js`; `middleware/pageAuth.js` verifies the HttpOnly login cookie and `controllers/pageController.js` renders EJS templates from `views/`. Page behavior is in `public/js/page-app.js`. Navigation and forms are rendered only for relevant roles; API authorization remains authoritative. Dashboard and feature data comes from the signed-in user's accessible records, not hard-coded demonstration rows.
 
-Additional plain HTML data pages are available after login:
+Additional EJS pages are available after login:
 
 ```text
 /users
@@ -171,16 +171,17 @@ Additional plain HTML data pages are available after login:
 /notifications
 /monitoring
 /reports
+/profile
 ```
 
-Each page calls its corresponding JWT-protected API endpoint and displays the returned data as plain JSON inside the HTML page.
+Pages use the HttpOnly cookie for API requests. Workspace, project, task, and member selectors display names rather than asking users to copy database IDs.
 
-The module pages now also contain plain HTML forms for the implemented operations:
+The module pages provide role-aware forms and interactive lists for the implemented operations:
 
-- Users: update a user role
-- Workspaces: create a workspace
-- Projects: create and update project details/progress
-- Tasks: create, assign, update status, and update progress
+- Team directory: view accounts within your accessible team scope
+- Workspaces: create a workspace, select members from the account directory, and manage team roles
+- Projects: create projects by selecting a workspace, manager, and developers from that workspace; update project details and project membership
+- Tasks: create and assign tasks by selecting projects and developers, then update task status and progress
 - Submissions: upload source files or ZIP files, track branch names, and review code submissions with approve/request-changes actions
 - Meetings: schedule, start, join, and end live project video meetings
 - Messages: persistent real-time group chat for project teams
@@ -273,7 +274,6 @@ The `/pages` route links to the browser views. API routes remain separate under 
 - POST /api/users/login
 - POST /api/users/logout
 - GET /api/users/me (JWT required)
-- PATCH /api/users/:userId/role (admin JWT required)
 - GET /api/users
 - POST /api/workspaces
 - GET /api/workspaces
@@ -326,7 +326,7 @@ Send that token to protected endpoints in the `Authorization` header:
 Authorization: Bearer your.jwt.token
 ```
 
-The simple HTML UI stores the token in browser local storage after login, sends it automatically with protected requests, and provides a logout button. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default).
+The EJS UI uses an HttpOnly, SameSite cookie for protected page, API, and real-time requests; it does not keep the JWT in browser local storage. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default). API clients may continue to use a bearer token.
 
 Protected API and page middleware reload the active account from MongoDB and place it on `req.user`; controllers use this trusted server-side identity for owners, task reporters, submission developers, meeting hosts, message senders, and activity actors. Clients must not send or override those actor IDs. Request-supplied IDs identify target resources or recipients only, and are checked against the signed-in user's project/workspace access. Workspace creation always assigns its owner from the authenticated administrator.
 
@@ -334,12 +334,12 @@ Protected API and page middleware reload the active account from MongoDB and pla
 
 Public registration always creates a `developer` account. This prevents users from granting themselves admin or project manager privileges.
 
-- `admin`: create workspaces and projects, manage users, and create notifications
+- `admin`: workspace administrator for workspaces they own; create projects, manage workspace members, and create notifications only for those workspace teams
 - `project_manager`: view users, create tasks, schedule meetings, and create notifications
 - `developer`: view assigned data, submit code, schedule meetings, and send messages
 - `viewer`: read-only access to project data only after explicit project membership; viewers must be added as read-only guests
 
-Project managers can add, remove, and update project members on their assigned projects. Task assignees must be active developers in the project, developers can update only their own assigned tasks, and project managers/admins can review submissions.
+Workspace administrators can create multiple workspaces, but cannot access workspace or project data they do not own. Project managers can add, remove, and update project members on their assigned projects. Task assignees must be active developers in the project, developers can update only their own assigned tasks, and project managers/admins can review submissions.
 
 ## Code and ZIP uploads
 
@@ -380,11 +380,10 @@ Protected operations return `403` when the user lacks the required permission an
 
 ## Future next steps
 
-The next iteration can include:
+Future work can include:
 
-- JWT authentication for secure login
-- Role-based access control
-- File upload handling for code and zip files
-- Real-time chat and video conferencing integration
-- React or Angular frontend upgrade
-- Deployment setup and CI/CD
+- MongoDB-backed end-to-end API and Socket.IO authorization tests
+- Automated scheduled deadline alerts
+- Hardened upload scanning, retention, and production object storage
+- Production deployment, monitoring, backups, and recovery procedures
+- Optional React or Angular frontend upgrade

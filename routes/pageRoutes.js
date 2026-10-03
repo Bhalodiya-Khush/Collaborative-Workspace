@@ -19,6 +19,7 @@ router.get('/submissions', requirePageAuth, pageController.renderSubmissions);
 router.get('/meetings', requirePageAuth, pageController.renderMeetings);
 router.get('/messages', requirePageAuth, allowPageRoles('admin', 'project_manager', 'developer'), pageController.renderMessages);
 router.get('/notifications', requirePageAuth, pageController.renderNotifications);
+router.get('/profile', requirePageAuth, pageController.renderProfile);
 router.get('/pages', requirePageAuth, pageController.renderPagesIndex);
 router.get('/pages/*path', requirePageAuth, pageController.renderPagesIndex);
 

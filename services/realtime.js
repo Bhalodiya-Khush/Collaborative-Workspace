@@ -14,6 +14,14 @@ const acknowledge = (callback, result) => {
   if (typeof callback === 'function') callback(result);
 };
 
+const getCookieToken = (cookieHeader, name) => {
+  const entry = (cookieHeader || '')
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null;
+};
+
 const attachRealtimeServer = (httpServer) => {
   io = new Server(httpServer, {
     cors: {
@@ -22,7 +30,8 @@ const attachRealtimeServer = (httpServer) => {
   });
 
   io.use(async (socket, next) => {
-    const token = socket.handshake.auth && socket.handshake.auth.token;
+    const token = (socket.handshake.auth && socket.handshake.auth.token)
+      || getCookieToken(socket.handshake.headers.cookie, 'collaborativeWorkspaceToken');
     if (typeof token !== 'string' || !token) {
       return next(new Error('Authentication required.'));
     }

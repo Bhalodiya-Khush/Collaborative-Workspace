@@ -1,0 +1,14 @@
+<%- include('partials/header', { title: 'Profile', page: 'profile', user }) %>
+<h2>My profile</h2><p>Update your account details and password.</p>
+<section><h3>Account details</h3><form id="profileForm" class="form-grid">
+  <label>Full name<input name="fullName" required value="<%= user.fullName %>"></label>
+  <label>Email<input name="email" type="email" required value="<%= user.email %>"></label>
+  <label class="form-wide">Skills <span class="help">Separate skills with commas.</span><input name="skills" value="<%= (user.skills || []).join(', ') %>"></label>
+  <button type="submit">Save profile</button>
+</form></section>
+<section><h3>Change password</h3><form id="passwordForm" class="form-grid">
+  <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required></label>
+  <label>New password<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+  <button type="submit">Change password</button>
+</form></section>
+<%- include('partials/footer') %>

@@ -1,49 +1,68 @@
 <%- include('partials/header', { title: 'Projects', page: 'projects', user }) %>
 <h2>Projects</h2>
-<p>Projects are limited to those available to your account.</p>
+<p>Choose a project to see its progress, team, tasks, and submissions.</p>
+
 <% if (user.role === 'admin') { %>
   <section>
-    <h3>Create project</h3>
-    <form id="projectForm">
-      <p><label>Project name<br><input name="name" required></label></p>
-      <p><label>Description<br><textarea name="description"></textarea></label></p>
-      <p><label>Workspace ID<br><input name="workspace" required></label></p>
-      <p><label>Project manager user ID<br><input name="projectManager" required></label></p>
-      <p><label>Developer IDs (comma separated)<br><input name="developers"></label></p>
+    <h3>Create a project</h3>
+    <form id="projectForm" class="form-grid">
+      <label>Workspace<select id="projectWorkspace" name="workspace" required><option value="">Loading your workspaces...</option></select></label>
+      <label>Project name<input name="name" maxlength="120" required placeholder="e.g. Customer portal"></label>
+      <label class="form-wide">Description<textarea name="description" maxlength="2000" placeholder="What are you building?"></textarea></label>
+      <label>Project manager<select id="projectManager" name="projectManager" required><option value="">Choose a workspace first</option></select></label>
+      <label>Default branch<input name="defaultBranch" value="main"></label>
+      <div class="form-wide">
+        <label>Developers <span class="help">Select workspace members who will work on this project.</span></label>
+        <div id="projectDeveloperChoices" class="check-list"><p>Choose a workspace to see its members.</p></div>
+      </div>
       <button type="submit">Create project</button>
     </form>
   </section>
 <% } %>
+
 <% if (['admin', 'project_manager'].includes(user.role)) { %>
   <section>
     <h3>Update project</h3>
-    <form id="projectUpdateForm">
-      <p><label>Project ID<br><input name="projectId" required></label></p>
-      <p><label>New name<br><input name="name"></label></p>
-      <p><label>Status<br><select name="status"><option value="">Keep current status</option><option>planning</option><option>in_progress</option><option>review</option><option>completed</option><option>on_hold</option></select></label></p>
-      <p><label>Progress 0-100<br><input name="progress" type="number" min="0" max="100"></label></p>
-      <button type="submit">Update project</button>
+    <form id="projectUpdateForm" class="form-grid">
+      <label>Project<select name="projectId" id="updateProject" required><option value="">Choose a project</option></select></label>
+      <label>Project name<input name="name" placeholder="Keep current name"></label>
+      <label>Status<select name="status"><option value="">Keep current status</option><option>planning</option><option>in_progress</option><option>review</option><option>completed</option><option>on_hold</option></select></label>
+      <label>Progress<input name="progress" type="number" min="0" max="100" placeholder="Leave blank to keep"></label>
+      <button type="submit">Save project changes</button>
     </form>
+    <% if (user.role === 'admin') { %>
+      <form id="projectManagerForm" class="form-grid">
+        <label>Project<select name="projectId" id="managerProject" required><option value="">Choose a project</option></select></label>
+        <label>New project manager<select name="projectManagerId" id="newProjectManager" required><option value="">Choose a project first</option></select></label>
+        <button type="submit">Reassign project manager</button>
+      </form>
+    <% } %>
   </section>
   <section>
     <h3>Manage project members</h3>
-    <form id="projectMemberForm">
-      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>User ID<br><input name="userId" required></label></p>
-      <p><label>Role<br><select name="role"><option>developer</option><option>reviewer</option><option>guest</option></select></label></p>
-      <p><label>Access level<br><select name="accessLevel"><option>write</option><option>read</option></select></label></p>
-      <button type="submit">Add project member</button>
+    <form id="projectMemberForm" class="form-grid">
+      <label>Project<select name="projectId" id="memberProject" required><option value="">Choose a project</option></select></label>
+      <label>Workspace member<select name="userId" id="projectMemberUser" required><option value="">Choose a project first</option></select></label>
+      <label>Project role<select name="role" id="newMemberRole"><option value="developer">Developer</option><option value="reviewer">Reviewer</option><option value="guest">Guest (read-only)</option></select></label>
+      <label>Access<select name="accessLevel" id="newMemberAccess"><option value="write">Can contribute</option><option value="read">Read-only</option></select></label>
+      <button type="submit">Add to project</button>
     </form>
-    <form id="projectMemberRoleForm">
-      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>Member user ID<br><input name="userId" required></label></p>
-      <p><label>Role<br><select name="role"><option>developer</option><option>reviewer</option><option>guest</option></select></label></p>
-      <p><label>Access level<br><select name="accessLevel"><option>write</option><option>read</option></select></label></p>
-      <button type="submit">Update member role</button>
+    <form id="projectMemberRoleForm" class="form-grid">
+      <label>Project<select name="projectId" id="roleProject" required><option value="">Choose a project</option></select></label>
+      <label>Current member<select name="userId" id="roleProjectMember" required><option value="">Choose a project first</option></select></label>
+      <label>Project role<select name="role"><option value="developer">Developer</option><option value="reviewer">Reviewer</option><option value="guest">Guest</option></select></label>
+      <label>Access<select name="accessLevel"><option value="write">Can contribute</option><option value="read">Read-only</option></select></label>
+      <button type="submit">Update access</button>
     </form>
-    <form id="projectMemberRemoveForm">
-      <p><label>Project ID<br><input name="projectId" required></label></p><p><label>Member user ID<br><input name="userId" required></label></p>
-      <button type="submit">Remove project member</button>
+    <form id="projectMemberRemoveForm" class="form-grid">
+      <label>Project<select name="projectId" id="removeProject" required><option value="">Choose a project</option></select></label>
+      <label>Member to remove<select name="userId" id="removeProjectMember" required><option value="">Choose a project first</option></select></label>
+      <button type="submit" class="button-danger">Remove member</button>
     </form>
   </section>
 <% } %>
-<ul id="projects"><li>Loading projects...</li></ul>
+<section>
+  <h3>Accessible projects</h3>
+  <ul id="projects" class="card-list"><li class="empty-state">Loading projects...</li></ul>
+</section>
 <%- include('partials/footer') %>

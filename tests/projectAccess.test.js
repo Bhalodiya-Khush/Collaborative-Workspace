@@ -18,7 +18,12 @@ const originalMethods = {
   memberFindOne: ProjectMember.findOne,
 };
 
-const configureAccess = ({ workspaceActive = true, membership = null, legacyDeveloper = false } = {}) => {
+const configureAccess = ({
+  workspaceActive = true,
+  membership = null,
+  legacyDeveloper = false,
+  workspaceOwner = projectManagerId,
+} = {}) => {
   Project.findById = async () => ({
     _id: projectId,
     workspace: workspaceId,
@@ -26,7 +31,7 @@ const configureAccess = ({ workspaceActive = true, membership = null, legacyDeve
     developers: legacyDeveloper ? [userId] : [],
   });
   Workspace.findOne = () => ({
-    select: async () => (workspaceActive ? { _id: workspaceId } : null),
+    select: async () => (workspaceActive ? { _id: workspaceId, owner: workspaceOwner } : null),
   });
   ProjectMember.findOne = async () => membership;
 };
@@ -46,6 +51,16 @@ test('assigned project managers receive project management permissions', async (
   );
 
   assert.deepEqual([...access.permissions].sort(), ['manage', 'read', 'review', 'write']);
+});
+
+test('workspace administrators only manage projects in workspaces they own', async () => {
+  configureAccess({ workspaceOwner: userId });
+  const access = await resolveProjectAccess({ _id: userId, role: 'admin' }, projectId);
+  assert.deepEqual([...access.permissions].sort(), ['manage', 'read', 'review', 'write']);
+
+  configureAccess({ workspaceOwner: projectManagerId });
+  const unrelatedAccess = await resolveProjectAccess({ _id: userId, role: 'admin' }, projectId);
+  assert.equal(unrelatedAccess, null);
 });
 
 test('active developers receive write access, but not project management access', async () => {

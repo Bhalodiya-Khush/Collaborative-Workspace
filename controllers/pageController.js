@@ -35,5 +35,6 @@ module.exports = {
   }),
   renderMessages: renderView('messages'),
   renderNotifications: renderView('notifications'),
+  renderProfile: renderView('profile'),
   renderPagesIndex: renderView('pages/index'),
 };

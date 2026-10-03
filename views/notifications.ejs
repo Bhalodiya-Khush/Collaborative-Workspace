@@ -3,11 +3,13 @@
 <% if (['admin', 'project_manager'].includes(user.role)) { %>
   <section>
     <h3>Create notification</h3>
-    <form id="notificationForm"><p><label>Recipient user ID<br><input name="user" required></label></p>
-      <p><label>Title<br><input name="title" required></label></p><p><label>Message<br><textarea name="message" required></textarea></label></p>
+    <form id="notificationForm" class="form-grid">
+      <label>Recipient<select name="user" id="notificationUser" required><option value="">Choose a team member</option></select></label>
+      <label>Title<input name="title" maxlength="120" required></label>
+      <label class="form-wide">Message<textarea name="message" maxlength="2000" required></textarea></label>
       <button type="submit">Create notification</button>
     </form>
   </section>
 <% } %>
-<ul id="notifications"><li>Loading notifications...</li></ul>
+<section><div class="form-actions"><h3>Recent notifications</h3><button id="markAllRead" class="button button-quiet" type="button">Mark all as read</button></div><ul id="notifications" class="card-list"><li class="empty-state">Loading notifications...</li></ul></section>
 <%- include('partials/footer') %>

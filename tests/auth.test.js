@@ -43,6 +43,28 @@ test('authentication accepts a current token version and keeps the version out o
   assert.equal(req.user.tokenVersion, undefined);
 });
 
+test('authentication accepts the HttpOnly browser cookie without an Authorization header', async () => {
+  const user = {
+    _id: 'user-id',
+    role: 'developer',
+    isActive: true,
+    tokenVersion: 2,
+    set(field, value) {
+      this[field] = value;
+    },
+  };
+  configureAuth({ userId: 'user-id', tokenVersion: 2 }, user);
+  let nextCalled = false;
+
+  await requireAuth(
+    { headers: { cookie: 'collaborativeWorkspaceToken=cookie-token' } },
+    { status() { return this; }, json() {} },
+    () => { nextCalled = true; }
+  );
+
+  assert.equal(nextCalled, true);
+});
+
 test('authentication rejects tokens invalidated by a password change', async () => {
   const user = {
     _id: 'user-id',
@@ -61,6 +83,7 @@ test('authentication rejects tokens invalidated by a password change', async () 
       responseStatus = status;
       return this;
     },
+    clearCookie() {},
     json() {},
   };
 

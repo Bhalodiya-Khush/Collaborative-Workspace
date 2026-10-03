@@ -1,16 +1,16 @@
-<%- include('../partials/header', { title: 'Administrator dashboard', page: 'dashboard', user }) %>
-<h2>Administrator dashboard</h2>
-<p>Manage company workspaces, projects, user roles, and platform activity.</p>
+<%- include('../partials/header', { title: 'Workspace administrator dashboard', page: 'dashboard', user }) %>
+<h2>Workspace administrator dashboard</h2>
+<p>Manage the workspaces you own, create projects, and organize each workspace team. You are not a system-wide administrator.</p>
 <section>
-  <h3>System totals</h3>
-  <p id="stats">Loading authorized system totals...</p>
+  <h3>Your workspace overview</h3>
+  <p id="stats">Loading your workspace totals...</p>
 </section>
 <section>
-  <h3>Projects I manage</h3>
+  <div class="form-actions"><h3>Your projects</h3><a class="button" href="/projects">Create or manage projects</a></div>
   <ul id="projects"><li>Loading projects...</li></ul>
 </section>
 <section>
-  <h3>Tasks in my projects</h3>
+  <h3>Tasks across your projects</h3>
   <ul id="tasks"><li>Loading tasks...</li></ul>
 </section>
 <section>

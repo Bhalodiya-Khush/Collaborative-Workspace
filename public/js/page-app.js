@@ -1,12 +1,24 @@
 (() => {
-  const tokenKey = 'collaborativeWorkspaceToken';
   const page = document.body.dataset.page;
   const messageElement = document.getElementById('message');
   const dataElement = document.getElementById('data');
 
   const show = (data) => {
-    if (messageElement) messageElement.textContent = 'Operation completed.';
-    if (dataElement) dataElement.textContent = JSON.stringify(data, null, 2);
+    if (messageElement) {
+      messageElement.textContent = data?.message || 'Completed successfully.';
+      messageElement.dataset.error = 'false';
+    }
+    if (dataElement && data && typeof data === 'object') {
+      const hideIdentifiers = (value) => {
+        if (Array.isArray(value)) return value.map(hideIdentifiers);
+        if (!value || typeof value !== 'object') return value;
+        return Object.fromEntries(Object.entries(value)
+          .filter(([key]) => !['_id', 'id', 'token', 'tokenVersion', 'password'].includes(key))
+          .map(([key, child]) => [key, hideIdentifiers(child)]));
+      };
+      dataElement.textContent = JSON.stringify(hideIdentifiers(data), null, 2);
+      dataElement.hidden = false;
+    }
   };
 
   const renderList = (id, items, emptyMessage, renderItem) => {
@@ -26,29 +38,22 @@
     });
   };
 
-  const textWithId = (item, value, id) => {
-    item.textContent = `${value} (ID: ${id})`;
-  };
+  const textWithId = (item, value) => { item.textContent = value; };
 
   const fail = (error) => {
-    if (messageElement) messageElement.textContent = error.message;
+    if (messageElement) {
+      messageElement.textContent = error.message;
+      messageElement.dataset.error = 'true';
+    }
   };
 
   const api = async (url, options = {}) => {
-    const token = localStorage.getItem(tokenKey);
-    if (!token) {
-      window.location.href = '/login';
-      return null;
-    }
-
     const headers = new Headers(options.headers || {});
     if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-    headers.set('Authorization', `Bearer ${token}`);
-    const response = await fetch(url, { ...options, headers });
-    const data = await response.json();
+    const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
+    const data = response.status === 204 ? null : await response.json();
 
     if (response.status === 401) {
-      localStorage.removeItem(tokenKey);
       window.location.href = '/login';
       return null;
     }
@@ -85,8 +90,6 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed.');
-      localStorage.setItem(tokenKey, data.token);
-      if (data.user?.role) localStorage.setItem('collaborativeWorkspaceRole', data.user.role);
       window.location.href = '/dashboard';
     });
     return;
@@ -109,12 +112,6 @@
   }
 
   if (page === 'dashboard') {
-    const token = localStorage.getItem(tokenKey);
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-
     bindLogout();
 
     Promise.all([
@@ -125,13 +122,23 @@
       api('/api/notifications'),
     ]).then(([userData, stats, projects, tasks, notifications]) => {
       if (!userData) return;
-      localStorage.setItem('collaborativeWorkspaceRole', userData.user.role);
       const statsElement = document.getElementById('stats');
       if (statsElement) {
         const values = userData.user.role === 'admin'
-          ? [`Users: ${stats.totalUsers}`, `Workspaces: ${stats.totalWorkspaces}`, `Projects: ${stats.totalProjects}`, `Tasks: ${stats.totalTasks}`]
-          : [`Projects: ${stats.totalProjects}`, `Tasks: ${stats.totalTasks}`, `Completed tasks: ${stats.totalCompletedTasks}`, `Submissions: ${stats.totalSubmissions}`];
-        statsElement.textContent = values.join(' | ');
+          ? [['Team members', stats.totalUsers], ['Workspaces', stats.totalWorkspaces], ['Projects', stats.totalProjects], ['Tasks', stats.totalTasks]]
+          : [['Projects', stats.totalProjects], ['Tasks', stats.totalTasks], ['Completed tasks', stats.totalCompletedTasks], ['Submissions', stats.totalSubmissions]];
+        statsElement.replaceChildren();
+        statsElement.className = 'stats-grid';
+        values.forEach(([label, value]) => {
+          const card = document.createElement('div');
+          card.className = 'stat-card';
+          const number = document.createElement('strong');
+          number.textContent = String(value);
+          const caption = document.createElement('span');
+          caption.textContent = label;
+          card.append(number, caption);
+          statsElement.append(card);
+        });
       }
       renderList('projects', projects, 'No accessible projects.', (item, project) => {
         textWithId(item, `${project.name} — ${project.status}`, project._id);
@@ -153,10 +160,8 @@
     if (!logoutButton) return;
     logoutButton.addEventListener('click', async () => {
       try {
-        await fetch('/api/users/logout', { method: 'POST' });
+        await fetch('/api/users/logout', { method: 'POST', credentials: 'same-origin' });
       } finally {
-        localStorage.removeItem(tokenKey);
-        localStorage.removeItem('collaborativeWorkspaceRole');
         window.location.href = '/login';
       }
     });
@@ -166,10 +171,8 @@
     if (typeof window.io !== 'function') {
       throw new Error('Real-time connection support could not be loaded.');
     }
-    const token = localStorage.getItem(tokenKey);
-    if (!token) throw new Error('Sign in before connecting.');
     const socket = window.io({
-      auth: { token },
+      withCredentials: true,
       reconnection: true,
     });
     socket.on('connect_error', (error) => {
@@ -193,22 +196,139 @@
   const loadProjectOptions = async (selectIds) => {
     const projects = await api('/api/projects');
     const projectMap = new Map(projects.map((project) => [project._id, project]));
-    selectIds.forEach((selectId) => {
-      const select = document.getElementById(selectId);
-      if (!select) return;
-      select.replaceChildren();
-      const placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = projects.length ? 'Choose a project' : 'No accessible projects';
-      select.append(placeholder);
-      projects.forEach((project) => {
-        const option = document.createElement('option');
-        option.value = project._id;
-        option.textContent = project.name;
-        select.append(option);
+    selectIds.forEach((selectId) => fillSelect(
+      document.getElementById(selectId),
+      projects,
+      (project) => project.name,
+      'Choose a project'
+    ));
+    return projectMap;
+  };
+
+  const fillSelect = (select, items, label, placeholder = 'Choose an option', selectedValue = '') => {
+    if (!select) return;
+    select.replaceChildren();
+    const initialOption = document.createElement('option');
+    initialOption.value = '';
+    initialOption.textContent = placeholder;
+    select.append(initialOption);
+    items.forEach((item) => {
+      const option = document.createElement('option');
+      option.value = item._id;
+      option.textContent = label(item);
+      if (item.role) option.dataset.role = item.role;
+      select.append(option);
+    });
+    if (selectedValue) select.value = selectedValue;
+  };
+
+  const fillMemberChecks = (container, members, name, filter = () => true) => {
+    if (!container) return;
+    container.replaceChildren();
+    const eligibleMembers = members.filter(filter);
+    if (!eligibleMembers.length) {
+      const empty = document.createElement('p');
+      empty.className = 'help';
+      empty.textContent = 'No eligible team members found.';
+      container.append(empty);
+      return;
+    }
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'member-search';
+    search.placeholder = 'Search by name, email, or role';
+    search.setAttribute('aria-label', 'Search members');
+    container.append(search);
+    const labels = [];
+    eligibleMembers.forEach((member) => {
+      const label = document.createElement('label');
+      label.dataset.searchText = `${member.fullName} ${member.email} ${member.role}`.toLowerCase();
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = name;
+      checkbox.value = member._id;
+      const text = document.createElement('span');
+      text.textContent = member.fullName;
+      const detail = document.createElement('small');
+      detail.textContent = `${member.email} · ${member.role.replace('_', ' ')}`;
+      text.append(detail);
+      label.append(checkbox, text);
+      labels.push(label);
+      container.append(label);
+    });
+    search.addEventListener('input', () => {
+      const query = search.value.trim().toLowerCase();
+      labels.forEach((label) => {
+        label.hidden = query && !label.dataset.searchText.includes(query);
       });
     });
-    return projectMap;
+  };
+
+  const getWorkspaceMembers = async (workspaceId) => (
+    workspaceId
+      ? api(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`)
+      : []
+  );
+
+  const getProjectMembers = async (projectId) => (
+    projectId
+      ? api(`/api/projects/${encodeURIComponent(projectId)}/members`)
+      : []
+  );
+
+  const projectPermissionCache = new Map();
+  let projectAccessList;
+  const hasProjectPermission = (projectId, permission) => {
+    const key = `${projectId}:${permission}`;
+    if (projectPermissionCache.has(key)) return projectPermissionCache.get(key);
+    const accessPromise = (async () => {
+      projectAccessList = projectAccessList || api('/api/projects');
+      const projects = await projectAccessList;
+      const project = projects.find((item) => String(item._id) === String(projectId));
+      if (!project) return false;
+      const role = document.body.dataset.role;
+      const userId = document.body.dataset.userId;
+      if (role === 'admin') return true;
+      if (role === 'project_manager'
+        && String(project.projectManager?._id || project.projectManager) === userId) return true;
+
+      const memberships = await getProjectMembers(projectId);
+      const membership = memberships.find((item) => (
+        item.isActive && String(item.user?._id || item.user) === userId
+      ));
+      if (!membership) return false;
+      if (permission === 'review') return membership.role === 'reviewer';
+      return role === 'developer'
+        && membership.role === 'developer'
+        && ['write', 'admin'].includes(membership.accessLevel);
+    })();
+    projectPermissionCache.set(key, accessPromise);
+    return accessPromise;
+  };
+
+  const projectOptions = async (selectIds) => {
+    const projects = await api('/api/projects');
+    selectIds.forEach((id) => fillSelect(
+      document.getElementById(id),
+      projects,
+      (project) => `${project.name} · ${project.workspace?.name || 'Workspace'}`,
+      'Choose a project'
+    ));
+    return projects;
+  };
+
+  const taskOptions = async (selectIds, projectId = '') => {
+    const tasks = await api('/api/tasks');
+    const filtered = projectId
+      ? tasks.filter((task) => String(task.project?._id || task.project) === projectId)
+      : tasks;
+    selectIds.forEach((id) => fillSelect(
+      document.getElementById(id),
+      filtered,
+      (task) => `${task.title} · ${task.project?.name || 'Project'} · ${task.status}`,
+      'Choose a task'
+    ));
+    return tasks;
   };
 
   bindLogout();
@@ -240,7 +360,11 @@
       textWithId(item, `${task.title} — ${task.status} — ${task.completionPercentage}%`, task._id);
     }],
     submissions: ['submissions', 'No submissions are available to this account.', (item, submission) => {
-      textWithId(item, `${submission.title} — ${submission.reviewStatus} — ${submission.branchName || 'no branch'}`, submission._id);
+      const title = document.createElement('strong');
+      title.textContent = `${submission.title} · ${submission.reviewStatus.replace('_', ' ')}`;
+      const details = document.createElement('p');
+      details.textContent = `${submission.project?.name || 'Project'} · ${submission.task?.title || 'Task'} · ${submission.branchName || 'no branch'} · ${submission.developer?.fullName || 'Developer'}`;
+      item.append(title, details);
       (submission.files || []).forEach((file) => {
         const link = document.createElement('a');
         const storedPath = new URL(file.downloadUrl, window.location.origin).pathname;
@@ -258,7 +382,26 @@
       textWithId(item, `${message.sender?.fullName || 'Member'}: ${message.content}`, message._id);
     }],
     notifications: ['notifications', 'No notifications.', (item, notification) => {
-      textWithId(item, `${notification.title}: ${notification.message}`, notification._id);
+      const title = document.createElement('strong');
+      title.textContent = notification.title;
+      const details = document.createElement('p');
+      details.textContent = notification.message;
+      item.append(title, details);
+      if (!notification.isRead) {
+        const markRead = document.createElement('button');
+        markRead.type = 'button';
+        markRead.className = 'button button-quiet';
+        markRead.textContent = 'Mark as read';
+        markRead.addEventListener('click', async () => {
+          try {
+            await api(`/api/notifications/${encodeURIComponent(notification._id)}/read`, { method: 'PATCH' });
+            await load('/api/notifications', listTargets.notifications);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        item.append(markRead);
+      }
     }],
   };
   const load = async (endpoint, target = listTargets[page]) => {
@@ -294,7 +437,7 @@
     const localVideo = document.getElementById('localMeetingVideo');
     const currentUserId = document.body.dataset.userId;
     const canJoinMeetings = ['admin', 'project_manager', 'developer'].includes(document.body.dataset.role);
-    const canEndMeetings = ['admin', 'project_manager'].includes(document.body.dataset.role);
+    const isWorkspaceAdmin = document.body.dataset.role === 'admin';
 
     const renderMeetings = (meetings) => {
       renderList('meetings', meetings, 'No meetings for this project yet.', (item, meeting) => {
@@ -313,7 +456,10 @@
           joinButton.addEventListener('click', () => joinMeeting(meeting).catch(fail));
           item.append(joinButton);
           const meetingHostId = meeting.host?._id || meeting.host;
-          if (canEndMeetings || meetingHostId === currentUserId) {
+          const meetingProject = projectMap.get(String(meeting.project?._id || meeting.project));
+          const isAssignedManager = document.body.dataset.role === 'project_manager'
+            && String(meetingProject?.projectManager?._id || meetingProject?.projectManager) === currentUserId;
+          if (isWorkspaceAdmin || isAssignedManager || meetingHostId === currentUserId) {
             const endButton = document.createElement('button');
             endButton.type = 'button';
             endButton.textContent = 'End meeting';
@@ -465,6 +611,19 @@
       document.getElementById('meetingWorkspace').value = project?.workspace?._id || project?.workspace || '';
       const filterProject = document.getElementById('meetingFilterProject');
       if (filterProject && project) filterProject.value = project._id;
+      const scheduleButton = document.getElementById('scheduleMeetingButton');
+      if (scheduleButton) {
+        scheduleButton.disabled = true;
+        scheduleButton.textContent = 'Checking project access...';
+        hasProjectPermission(event.target.value, 'write')
+          .then((allowed) => {
+            scheduleButton.disabled = !allowed;
+            scheduleButton.textContent = allowed
+              ? 'Schedule project meeting'
+              : 'You have read-only access to this project';
+          })
+          .catch(fail);
+      }
     });
     document.getElementById('leaveMeeting')?.addEventListener('click', leaveMeeting);
     document.getElementById('toggleMeetingMic')?.addEventListener('click', (event) => {
@@ -544,22 +703,108 @@
     });
   }
 
-  if (page === 'users') {
-    bindSubmit('roleForm', async (formData) => {
-      const values = formValues(formData);
-      show(await api(`/api/users/${encodeURIComponent(values.userId)}/role`, jsonRequest('PATCH', { role: values.role })));
-    });
-  }
-
   if (page === 'workspaces') {
+    let workspaces = [];
+    let directory = [];
+    const refreshWorkspaces = async () => {
+      workspaces = await api('/api/workspaces');
+      const owned = workspaces.filter((workspace) => (
+        String(workspace.owner?._id || workspace.owner) === document.body.dataset.userId
+      ));
+      ['manageWorkspace', 'roleWorkspace', 'activityWorkspace', 'removeMemberWorkspace', 'updateWorkspace'].forEach((id) => fillSelect(
+        document.getElementById(id),
+        owned,
+        (workspace) => workspace.name,
+        'Choose a workspace'
+      ));
+      const emptyMessage = document.body.dataset.role === 'admin'
+        ? 'No workspaces yet. Create your first workspace above.'
+        : 'No workspaces are available to your account yet.';
+      renderList('workspaces', workspaces, emptyMessage, (item, workspace) => {
+        const projectCount = Array.isArray(workspace.projects) ? workspace.projects.length : 0;
+        item.textContent = `${workspace.name} · ${workspace.members?.length || 0} members · ${projectCount} projects`;
+      });
+    };
+    if (document.body.dataset.role === 'admin') {
+      Promise.all([api('/api/users?available=true'), refreshWorkspaces()])
+        .then(([users]) => {
+          directory = users;
+          fillMemberChecks(document.getElementById('initialWorkspaceMembers'), directory, 'members');
+          refreshAvailableWorkspaceMembers();
+        }).catch(fail);
+    } else {
+      refreshWorkspaces().catch(fail);
+    }
+
+    async function refreshAvailableWorkspaceMembers() {
+      const workspaceId = document.getElementById('manageWorkspace')?.value;
+      const existing = workspaceId ? await getWorkspaceMembers(workspaceId) : [];
+      const existingIds = new Set(existing.map((member) => String(member._id)));
+      const eligible = directory.filter((member) => !existingIds.has(String(member._id)));
+      fillSelect(
+        document.getElementById('availableWorkspaceMember'),
+        eligible,
+        (member) => `${member.fullName} · ${member.email}`,
+        workspaceId ? 'Choose a person to add' : 'Choose a workspace first'
+      );
+    }
+
+    async function refreshWorkspaceRoleMembers() {
+      const workspaceId = document.getElementById('roleWorkspace')?.value;
+      const members = await getWorkspaceMembers(workspaceId);
+      const workspace = workspaces.find((item) => String(item._id) === String(workspaceId));
+      const ownerId = workspace?.owner?._id || workspace?.owner;
+      fillSelect(
+        document.getElementById('roleWorkspaceMember'),
+        members.filter((member) => String(member._id) !== String(ownerId)),
+        (member) => `${member.fullName} · ${member.role.replace('_', ' ')}`,
+        workspaceId ? 'Choose a team member' : 'Choose a workspace first'
+      );
+    }
+    async function refreshRemovableWorkspaceMembers() {
+      const workspaceId = document.getElementById('removeMemberWorkspace')?.value;
+      const members = await getWorkspaceMembers(workspaceId);
+      const ownerId = workspaces.find((workspace) => String(workspace._id) === String(workspaceId))?.owner?._id
+        || workspaces.find((workspace) => String(workspace._id) === String(workspaceId))?.owner;
+      fillSelect(
+        document.getElementById('removeWorkspaceMember'),
+        members.filter((member) => String(member._id) !== String(ownerId)),
+        (member) => `${member.fullName} · ${member.role.replace('_', ' ')}`,
+        workspaceId ? 'Choose a member' : 'Choose a workspace first'
+      );
+    }
+
+    document.getElementById('manageWorkspace')?.addEventListener('change', () => {
+      refreshAvailableWorkspaceMembers().catch(fail);
+    });
+    document.getElementById('roleWorkspace')?.addEventListener('change', () => {
+      refreshWorkspaceRoleMembers().catch(fail);
+    });
+    document.getElementById('removeMemberWorkspace')?.addEventListener('change', () => {
+      refreshRemovableWorkspaceMembers().catch(fail);
+    });
+    document.getElementById('updateWorkspace')?.addEventListener('change', (event) => {
+      const workspace = workspaces.find((item) => String(item._id) === event.target.value);
+      const form = document.getElementById('workspaceUpdateForm');
+      if (form && workspace) {
+        form.elements.name.value = workspace.name;
+      }
+    });
+    document.getElementById('refreshWorkspaces')?.addEventListener('click', () => {
+      refreshWorkspaces().catch(fail);
+    });
     bindSubmit('workspaceForm', async (formData) => {
       const values = formValues(formData);
-      values.members = values.members ? values.members.split(',').map((item) => item.trim()).filter(Boolean) : [];
+      values.members = formData.getAll('members');
       show(await api('/api/workspaces', jsonRequest('POST', values)));
+      document.getElementById('workspaceForm').reset();
+      await refreshWorkspaces();
     });
     bindSubmit('memberForm', async (formData) => {
       const values = formValues(formData);
       show(await api(`/api/workspaces/${encodeURIComponent(values.workspaceId)}/members`, jsonRequest('POST', { userId: values.userId })));
+      await refreshAvailableWorkspaceMembers();
+      await refreshWorkspaces();
     });
     bindSubmit('roleForm', async (formData) => {
       const values = formValues(formData);
@@ -567,6 +812,22 @@
         userId: values.roleUserId,
         role: values.role,
       })));
+      await refreshWorkspaceRoleMembers();
+      await refreshWorkspaces();
+    });
+    bindSubmit('removeWorkspaceMemberForm', async (formData) => {
+      const values = formValues(formData);
+      show(await api(`/api/workspaces/${encodeURIComponent(values.workspaceId)}/members/${encodeURIComponent(values.userId)}`, { method: 'DELETE' }));
+      await refreshRemovableWorkspaceMembers();
+      await refreshWorkspaces();
+    });
+    bindSubmit('workspaceUpdateForm', async (formData) => {
+      const values = formValues(formData);
+      const workspaceId = values.workspaceId;
+      delete values.workspaceId;
+      if (!values.name) delete values.name;
+      show(await api(`/api/workspaces/${encodeURIComponent(workspaceId)}`, jsonRequest('PATCH', values)));
+      await refreshWorkspaces();
     });
     bindSubmit('activityForm', async (formData) => {
       const values = formValues(formData);
@@ -575,38 +836,174 @@
   }
 
   if (page === 'projects') {
+    let projects = [];
+    const refreshProjects = async () => {
+      projects = await projectOptions(['updateProject', 'managerProject', 'memberProject', 'roleProject', 'removeProject']);
+      renderList('projects', projects, 'No projects are available yet.', (item, project) => {
+        item.textContent = `${project.name} · ${project.status.replace('_', ' ')} · ${project.progress}% complete · Manager: ${project.projectManager?.fullName || 'Not assigned'}`;
+      });
+      return projects;
+    };
+    refreshProjects().catch(fail);
+    const availableWorkspaces = api('/api/workspaces');
+    availableWorkspaces.then((items) => fillSelect(
+      document.getElementById('projectWorkspace'),
+      items.filter((workspace) => String(workspace.owner?._id || workspace.owner) === document.body.dataset.userId),
+      (workspace) => workspace.name,
+      'Choose a workspace'
+    )).catch((error) => {
+      if (document.getElementById('projectWorkspace')) fail(error);
+    });
+
+    const loadWorkspaceProjectChoices = async (workspaceId) => {
+      const members = await getWorkspaceMembers(workspaceId);
+      fillSelect(
+        document.getElementById('projectManager'),
+        members.filter((member) => member.role === 'project_manager'),
+        (member) => `${member.fullName} · ${member.email}`,
+        'Choose a project manager'
+      );
+      fillMemberChecks(
+        document.getElementById('projectDeveloperChoices'),
+        members,
+        'developers',
+        (member) => member.role === 'developer'
+      );
+    };
+    document.getElementById('projectWorkspace')?.addEventListener('change', (event) => {
+      loadWorkspaceProjectChoices(event.target.value).catch(fail);
+    });
+    document.getElementById('updateProject')?.addEventListener('change', (event) => {
+      const project = projects.find((item) => String(item._id) === event.target.value);
+      const form = document.getElementById('projectUpdateForm');
+      if (form && project) {
+        form.elements.name.value = project.name;
+        form.elements.status.value = project.status;
+        form.elements.progress.value = project.progress;
+      }
+    });
+    document.getElementById('managerProject')?.addEventListener('change', async (event) => {
+      const project = projects.find((item) => String(item._id) === event.target.value);
+      const members = await getWorkspaceMembers(project?.workspace?._id || project?.workspace);
+      fillSelect(
+        document.getElementById('newProjectManager'),
+        members.filter((member) => member.role === 'project_manager'
+          && String(member._id) !== String(project?.projectManager?._id || project?.projectManager)),
+        (member) => `${member.fullName} · ${member.email}`,
+        'Choose a project manager'
+      );
+    });
+
+    const refreshProjectMembers = async (projectId, selectId, includeActiveOnly = true) => {
+      const members = await getProjectMembers(projectId);
+      const selectable = members
+        .filter((member) => member.user && (!includeActiveOnly || member.isActive))
+        .map((member) => ({
+          _id: member.user._id,
+          fullName: member.user.fullName,
+          role: member.role,
+        }));
+      fillSelect(
+        document.getElementById(selectId),
+        selectable,
+        (member) => `${member.fullName} · ${member.role.replace('_', ' ')}`,
+        projectId ? 'Choose a project member' : 'Choose a project first'
+      );
+    };
+    const refreshNewProjectMemberChoices = async (projectId) => {
+      const project = projects.find((item) => String(item._id) === String(projectId));
+      const workspaceMembers = await getWorkspaceMembers(project?.workspace?._id || project?.workspace);
+      const activeProjectMembers = await getProjectMembers(projectId);
+      const existingIds = new Set(activeProjectMembers.map((member) => String(member.user?._id || '')));
+      const eligible = workspaceMembers.filter((member) => (
+        !existingIds.has(String(member._id))
+        && ['developer', 'viewer'].includes(member.role)
+      ));
+      fillSelect(
+        document.getElementById('projectMemberUser'),
+        eligible,
+        (member) => `${member.fullName} · ${member.role.replace('_', ' ')}`,
+        'Choose a workspace member'
+      );
+    };
+    document.getElementById('projectMemberUser')?.addEventListener('change', (event) => {
+      const selectedRole = event.target.selectedOptions[0]?.dataset.role;
+      const roleSelect = document.getElementById('newMemberRole');
+      const accessSelect = document.getElementById('newMemberAccess');
+      if (selectedRole === 'viewer') {
+        roleSelect.value = 'guest';
+        accessSelect.value = 'read';
+      }
+    });
+    [
+      ['memberProject', 'projectMemberUser', false],
+      ['roleProject', 'roleProjectMember', true],
+      ['removeProject', 'removeProjectMember', true],
+    ].forEach(([projectSelect, memberSelect, activeOnly]) => {
+      document.getElementById(projectSelect)?.addEventListener('change', (event) => {
+        const action = projectSelect === 'memberProject'
+          ? refreshNewProjectMemberChoices(event.target.value)
+          : refreshProjectMembers(event.target.value, memberSelect, activeOnly);
+        action.catch(fail);
+      });
+    });
+
     bindSubmit('projectForm', async (formData) => {
       const values = formValues(formData);
-      values.developers = values.developers ? values.developers.split(',').map((item) => item.trim()).filter(Boolean) : [];
+      values.developers = formData.getAll('developers');
       show(await api('/api/projects', jsonRequest('POST', values)));
+      document.getElementById('projectForm').reset();
+      document.getElementById('projectDeveloperChoices')?.replaceChildren();
+      await refreshProjects();
     });
     bindSubmit('projectUpdateForm', async (formData) => {
       const values = formValues(formData);
       const projectId = values.projectId;
       delete values.projectId;
       if (values.progress === '') delete values.progress;
+      if (values.name === '') delete values.name;
+      if (values.status === '') delete values.status;
       show(await api(`/api/projects/${encodeURIComponent(projectId)}`, jsonRequest('PATCH', values)));
+      await refreshProjects();
+    });
+    bindSubmit('projectManagerForm', async (formData) => {
+      const values = formValues(formData);
+      show(await api(`/api/projects/${encodeURIComponent(values.projectId)}/manager`, jsonRequest('PATCH', {
+        projectManagerId: values.projectManagerId,
+      })));
+      await refreshProjects();
     });
     bindSubmit('projectMemberForm', async (formData) => {
       const values = formValues(formData);
       const projectId = values.projectId;
+      if (document.getElementById('projectMemberUser')?.selectedOptions[0]?.dataset.role === 'viewer') {
+        values.role = 'guest';
+        values.accessLevel = 'read';
+      }
       delete values.projectId;
       show(await api(`/api/projects/${encodeURIComponent(projectId)}/members`, jsonRequest('POST', values)));
+      await refreshNewProjectMemberChoices(projectId);
+      await refreshProjects();
     });
     bindSubmit('projectMemberRoleForm', async (formData) => {
       const values = formValues(formData);
       const { projectId, userId, ...role } = values;
       show(await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}/role`, jsonRequest('PATCH', role)));
+      await refreshProjectMembers(projectId, 'roleProjectMember');
     });
     bindSubmit('projectMemberRemoveForm', async (formData) => {
       const { projectId, userId } = formValues(formData);
       show(await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }));
+      await refreshProjectMembers(projectId, 'removeProjectMember');
+      await refreshProjects();
     });
   }
 
   if (page === 'monitoring' || page === 'reports') {
     const formId = page === 'monitoring' ? 'monitoringForm' : 'reportForm';
     const suffix = page === 'monitoring' ? '/monitoring' : '/report';
+    const selectId = page === 'monitoring' ? 'monitoringProject' : 'reportProject';
+    projectOptions([selectId]).catch(fail);
     bindSubmit(formId, async (formData) => {
       const { projectId } = formValues(formData);
       show(await api(`/api/projects/${encodeURIComponent(projectId)}${suffix}`));
@@ -614,11 +1011,58 @@
   }
 
   if (page === 'tasks') {
+    let accessibleProjects = [];
+    let accessibleTasks = [];
+    projectOptions(['taskProject', 'filterTaskProject'])
+      .then((projects) => { accessibleProjects = projects; })
+      .catch(fail);
+    const populateTaskChoices = async () => {
+      accessibleTasks = await taskOptions(['assignTask', 'updateTask']);
+    };
+    populateTaskChoices().catch(fail);
+    const loadTaskAssignees = async (projectId, selectId) => {
+      const members = await getProjectMembers(projectId);
+      const developers = members
+        .filter((member) => member.isActive
+          && member.user?.role === 'developer'
+          && member.role === 'developer'
+          && ['write', 'admin'].includes(member.accessLevel))
+        .map((member) => ({
+          _id: member.user._id,
+          fullName: member.user.fullName,
+          email: member.user.email,
+        }));
+      fillSelect(
+        document.getElementById(selectId),
+        developers,
+        (developer) => `${developer.fullName} · ${developer.email}`,
+        developers.length ? 'Choose a developer' : 'No writable developers'
+      );
+    };
+    document.getElementById('taskProject')?.addEventListener('change', (event) => {
+      const project = accessibleProjects.find((item) => String(item._id) === event.target.value);
+      document.getElementById('taskWorkspace').value = project?.workspace?._id || project?.workspace || '';
+      loadTaskAssignees(event.target.value, 'taskAssignee').catch(fail);
+    });
+    document.getElementById('assignTask')?.addEventListener('change', (event) => {
+      const task = accessibleTasks.find((item) => String(item._id) === event.target.value);
+      loadTaskAssignees(task?.project?._id || task?.project, 'assignDeveloper').catch(fail);
+    });
+    document.getElementById('updateTask')?.addEventListener('change', (event) => {
+      const task = accessibleTasks.find((item) => String(item._id) === event.target.value);
+      const form = document.getElementById('taskUpdateForm');
+      if (form && task) {
+        form.elements.status.value = task.status;
+        form.elements.completionPercentage.value = task.completionPercentage ?? '';
+      }
+    });
     bindSubmit('taskForm', async (formData) => {
       const values = formValues(formData);
       if (!values.assignee) delete values.assignee;
       if (!values.dueDate) delete values.dueDate;
       show(await api('/api/tasks', jsonRequest('POST', values)));
+      document.getElementById('taskForm').reset();
+      await populateTaskChoices();
     });
     bindSubmit('taskUpdateForm', async (formData) => {
       const values = formValues(formData);
@@ -633,10 +1077,12 @@
       } else {
         throw new Error('Choose a status or enter progress to update.');
       }
+      await populateTaskChoices();
     });
     bindSubmit('taskAssignForm', async (formData) => {
       const values = formValues(formData);
       show(await api(`/api/tasks/${encodeURIComponent(values.taskId)}/assign`, jsonRequest('PATCH', { assignee: values.assignee })));
+      await populateTaskChoices();
     });
     bindSubmit('taskFilterForm', async (formData) => {
       const values = formValues(formData);
@@ -652,22 +1098,68 @@
   }
 
   if (page === 'submissions') {
-    bindSubmit('submissionForm', async (formData) => {
-      const token = localStorage.getItem(tokenKey);
-      const response = await fetch('/api/submissions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+    const populateSubmissions = async () => {
+      const submissions = await api('/api/submissions');
+      const reviewable = [];
+      for (const submission of submissions) {
+        const projectId = String(submission.project?._id || submission.project);
+        if (await hasProjectPermission(projectId, 'review')) reviewable.push(submission);
+      }
+      fillSelect(
+        document.getElementById('reviewSubmission'),
+        reviewable,
+        (submission) => `${submission.title} · ${submission.project?.name || 'Project'} · ${submission.reviewStatus.replace('_', ' ')}`,
+        reviewable.length ? 'Choose a submission' : 'No submissions are available for your review'
+      );
+    };
+    if (document.getElementById('submissionProject')) {
+      projectOptions(['submissionProject']).catch(fail);
+      document.getElementById('submissionProject').addEventListener('change', (event) => {
+        const button = document.getElementById('uploadSubmissionButton');
+        button.disabled = true;
+        button.textContent = 'Checking project access...';
+        Promise.all([
+          hasProjectPermission(event.target.value, 'write'),
+          taskOptions(['submissionTask'], event.target.value),
+        ]).then(([allowed]) => {
+          button.disabled = !allowed;
+          button.textContent = allowed
+            ? 'Upload submission'
+            : 'You have read-only access to this project';
+        }).catch(fail);
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Upload failed.');
-      show(data);
+    }
+    if (document.getElementById('reviewSubmission')) populateSubmissions().catch(fail);
+    bindSubmit('submissionForm', async (formData) => {
+      const button = document.getElementById('uploadSubmissionButton');
+      button.disabled = true;
+      button.textContent = 'Uploading...';
+      let uploaded = false;
+      try {
+        const response = await fetch('/api/submissions', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Upload failed.');
+        show(data);
+        uploaded = true;
+        document.getElementById('submissionForm').reset();
+        await load('/api/submissions', listTargets.submissions);
+        if (document.getElementById('reviewSubmission')) await populateSubmissions();
+      } finally {
+        button.disabled = uploaded;
+        button.textContent = uploaded ? 'Choose a project with write access' : 'Upload submission';
+      }
     });
     bindSubmit('submissionReviewForm', async (formData) => {
       const values = formValues(formData);
       const submissionId = values.submissionId;
       delete values.submissionId;
       show(await api(`/api/submissions/${encodeURIComponent(submissionId)}/review`, jsonRequest('PATCH', values)));
+      await populateSubmissions();
+      await load('/api/submissions', listTargets.submissions);
     });
   }
 
@@ -709,11 +1201,17 @@
       queuedChatMessages = [];
       historyLoading = true;
       chatPanel.hidden = false;
+      const chatForm = document.getElementById('projectChatForm');
+      chatForm.hidden = true;
       document.getElementById('projectChatTitle').textContent = `${selectedProjects.get(projectId)?.name || 'Project'} team chat`;
       chatStatus.textContent = 'Connecting to project chat...';
       try {
         const joined = await requestRealtime(socket, 'project:chat:join', { projectId });
-        chatStatus.textContent = `Connected to ${selectedProjects.get(joined.projectId)?.name || 'project'} team chat.`;
+        const canSend = await hasProjectPermission(projectId, 'write');
+        chatStatus.textContent = canSend
+          ? `Connected to ${selectedProjects.get(joined.projectId)?.name || 'project'} team chat.`
+          : 'You have read-only access to this project chat.';
+        chatForm.hidden = !canSend;
         const messages = await api(`/api/messages?projectId=${encodeURIComponent(projectId)}&group=true`);
         chatList.replaceChildren();
         if (!messages.length) {
@@ -756,8 +1254,38 @@
   }
 
   if (page === 'notifications') {
+    if (document.getElementById('notificationUser')) {
+      api('/api/users')
+        .then((users) => fillSelect(
+          document.getElementById('notificationUser'),
+          users,
+          (user) => `${user.fullName} · ${user.email}`,
+          'Choose a team member'
+        )).catch(fail);
+    }
     bindSubmit('notificationForm', async (formData) => {
       show(await api('/api/notifications', jsonRequest('POST', formValues(formData))));
+      document.getElementById('notificationForm').reset();
+      await load('/api/notifications', listTargets.notifications);
+    });
+    document.getElementById('markAllRead')?.addEventListener('click', async () => {
+      try {
+        show(await api('/api/notifications/read-all', { method: 'PATCH' }));
+        await load('/api/notifications', listTargets.notifications);
+      } catch (error) { fail(error); }
+    });
+  }
+
+  if (page === 'profile') {
+    bindSubmit('profileForm', async (formData) => {
+      const values = formValues(formData);
+      values.skills = values.skills.split(',').map((skill) => skill.trim()).filter(Boolean);
+      show(await api('/api/users/me', jsonRequest('PATCH', values)));
+    });
+    bindSubmit('passwordForm', async (formData) => {
+      show(await api('/api/users/me/password', jsonRequest('PATCH', formValues(formData))));
+      document.getElementById('passwordForm').reset();
+      window.setTimeout(() => { window.location.href = '/login'; }, 1200);
     });
   }
 })();

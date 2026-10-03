@@ -17,16 +17,13 @@ const requireWorkspaceAccess = async (req, res, next) => {
       ],
     });
 
-    if (!workspace && req.user.role !== 'admin') {
+    if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found or access denied.' });
     }
 
-    req.workspace = workspace || await Workspace.findById(workspaceId);
-    if (!req.workspace) {
-      return res.status(404).json({ message: 'Workspace not found.' });
-    }
+    req.workspace = workspace;
 
-    next();
+    return next();
   } catch (error) {
     if (error.name === 'CastError') {
       return res.status(400).json({ message: 'Invalid workspace ID.' });
@@ -39,4 +36,18 @@ const requireWorkspaceAccess = async (req, res, next) => {
   }
 };
 
+const requireWorkspaceAdmin = async (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Workspace administrator access is required.' });
+  }
+
+  return requireWorkspaceAccess(req, res, () => {
+    if (req.workspace.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only this workspace’s administrator can manage it.' });
+    }
+    return next();
+  });
+};
+
 module.exports = requireWorkspaceAccess;
+module.exports.requireWorkspaceAdmin = requireWorkspaceAdmin;

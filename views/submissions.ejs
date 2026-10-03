@@ -1,26 +1,30 @@
 <%- include('partials/header', { title: 'Submissions', page: 'submissions', user }) %>
 <h2>Code submissions</h2>
-<p>Submission records and downloads are scoped to accessible projects.</p>
+<p>Upload work for an assigned task, or review submissions for your projects.</p>
 <% if (user.role === 'developer') { %>
   <section>
-    <h3>Submit code</h3>
-    <form id="submissionForm" enctype="multipart/form-data">
-      <p><label>Project ID<br><input name="project" required></label></p><p><label>Task ID<br><input name="task" required></label></p>
-      <p><label>Submission title<br><input name="title" required></label></p><p><label>Description<br><textarea name="description"></textarea></label></p>
-      <p><label>Branch name<br><input name="branchName"></label></p><p><label>Source files or ZIP (max 10 files)<br><input type="file" name="files" multiple></label></p>
-      <button type="submit">Upload submission</button>
+    <h3>Submit your work</h3>
+    <form id="submissionForm" enctype="multipart/form-data" class="form-grid">
+      <label>Project<select name="project" id="submissionProject" required><option value="">Choose a project</option></select></label>
+      <label>Task<select name="task" id="submissionTask" required><option value="">Choose a project first</option></select></label>
+      <label>Submission title<input name="title" maxlength="160" required placeholder="Describe this delivery"></label>
+      <label>Branch name<input name="branchName" maxlength="120" placeholder="e.g. feature/user-profile"></label>
+      <label class="form-wide">Description<textarea name="description"></textarea></label>
+      <label class="form-wide">Source files or ZIP <span class="help">Up to 10 files, 25 MB each.</span><input type="file" name="files" multiple accept=".zip,.js,.jsx,.ts,.tsx,.html,.css,.json,.java,.py,.c,.cpp,.h,.md,.txt,.cs"></label>
+      <button id="uploadSubmissionButton" type="submit" disabled>Choose a project with write access</button>
     </form>
   </section>
 <% } %>
-<% if (['admin', 'project_manager'].includes(user.role)) { %>
+<% if (['admin', 'project_manager', 'developer'].includes(user.role)) { %>
   <section>
-    <h3>Review submission</h3>
-    <form id="submissionReviewForm">
-      <p><label>Submission ID<br><input name="submissionId" required></label></p>
-      <p><label>Decision<br><select name="reviewStatus" required><option value="approved">Approve</option><option value="changes_requested">Request changes</option></select></label></p>
-      <p><label>Review notes<br><textarea name="reviewNotes"></textarea></label></p><button type="submit">Submit review</button>
+    <h3>Review work</h3>
+    <form id="submissionReviewForm" class="form-grid">
+      <label>Submission<select name="submissionId" id="reviewSubmission" required><option value="">Choose a submission</option></select></label>
+      <label>Decision<select name="reviewStatus" required><option value="approved">Approve</option><option value="changes_requested">Request changes</option></select></label>
+      <label class="form-wide">Review notes<textarea name="reviewNotes" placeholder="Share feedback with the developer"></textarea></label>
+      <button type="submit">Save review</button>
     </form>
   </section>
 <% } %>
-<ul id="submissions"><li>Loading submissions...</li></ul>
+<section><h3>Recent submissions</h3><ul id="submissions" class="card-list"><li class="empty-state">Loading submissions...</li></ul></section>
 <%- include('partials/footer') %>

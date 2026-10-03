@@ -10,7 +10,7 @@
       <p><label>Scheduled time<br><input name="scheduledAt" type="datetime-local" required></label></p>
       <p><label>Duration (minutes)<br><input name="durationMinutes" type="number" min="5" max="480" value="60" required></label></p>
       <p><label>Agenda<br><textarea name="agenda" maxlength="2000"></textarea></label></p>
-      <button type="submit">Schedule project meeting</button>
+      <button id="scheduleMeetingButton" type="submit" disabled>Choose a project with write access to schedule</button>
     </form>
   </section>
 <% } %>

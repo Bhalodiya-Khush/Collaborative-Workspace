@@ -31,20 +31,20 @@ const resolveProjectAccess = async (user, projectId) => {
   const project = await Project.findById(projectId);
   if (!project) return null;
 
-  if (user.role === 'admin') {
+  const workspace = await Workspace.findOne({
+    _id: project.workspace,
+    status: 'active',
+    $or: [{ owner: user._id }, { members: user._id }],
+  }).select('_id owner');
+  if (!workspace) return null;
+
+  if (user.role === 'admin' && workspace.owner?.toString() === user._id.toString()) {
     return {
       project,
       membership: null,
       permissions: new Set(permissionNames),
     };
   }
-
-  const workspace = await Workspace.findOne({
-    _id: project.workspace,
-    status: 'active',
-    $or: [{ owner: user._id }, { members: user._id }],
-  }).select('_id');
-  if (!workspace) return null;
 
   if (project.projectManager.toString() === user._id.toString()
     && user.role === 'project_manager') {
@@ -91,10 +91,6 @@ const getAccessibleProjectIds = async (user, permission = 'read') => {
   if (!permissionNames.includes(permission)) {
     throw new Error(`Unknown project permission: ${permission}`);
   }
-  if (user.role === 'admin') {
-    return Project.find().distinct('_id');
-  }
-
   const workspaceIds = await Workspace.find({
     status: 'active',
     $or: [{ owner: user._id }, { members: user._id }],
@@ -105,6 +101,16 @@ const getAccessibleProjectIds = async (user, permission = 'read') => {
   if (!workspaceProjectIds.length) return [];
 
   const projectIds = new Set();
+  if (user.role === 'admin') {
+    const managedWorkspaces = await Workspace.find({
+      _id: { $in: workspaceIds },
+      owner: user._id,
+    }).distinct('_id');
+    const ownedProjects = await Project.find({
+      workspace: { $in: managedWorkspaces },
+    }).distinct('_id');
+    ownedProjects.forEach((id) => projectIds.add(id.toString()));
+  }
   if (permission === 'read') {
     const [asManager, memberships] = await Promise.all([
       user.role === 'project_manager'

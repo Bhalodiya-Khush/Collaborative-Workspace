@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Collaborative Workspace - Registration</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Create account | Collaborative Workspace</title><link rel="stylesheet" href="/css/app.css"></head>
 <body data-page="register">
-  <main>
-    <h1>Collaborative Workspace</h1>
-    <h2>Create account</h2>
-    <p>New accounts are registered as developers. An administrator can assign other roles.</p>
-    <p id="message" aria-live="polite"></p>
-    <form id="registerForm">
-      <p><label>Full name<br><input type="text" name="fullName" required autocomplete="name"></label></p>
-      <p><label>Email<br><input type="email" name="email" required autocomplete="email"></label></p>
-      <p><label>Password<br><input type="password" name="password" required autocomplete="new-password"></label></p>
-      <button type="submit">Register</button>
-    </form>
-    <p>Already registered? <a href="/login">Back to login</a></p>
+  <main class="page-shell auth-shell">
+    <section>
+      <a class="brand" href="/login">Collaborative Workspace</a>
+      <h2>Create your account</h2>
+      <p>New accounts start as developers. Your workspace administrator can add you to a team and project.</p>
+      <p id="message" aria-live="polite"></p>
+      <form id="registerForm">
+        <label>Full name<input type="text" name="fullName" required autocomplete="name" placeholder="Your name"></label>
+        <label>Email<input type="email" name="email" required autocomplete="email" placeholder="you@company.com"></label>
+        <label>Password<input type="password" name="password" required autocomplete="new-password" minlength="8"></label>
+        <button type="submit">Create account</button>
+      </form>
+      <p>Already registered? <a href="/login">Sign in</a></p>
+    </section>
   </main>
   <script src="/js/page-app.js" defer></script>
 </body>

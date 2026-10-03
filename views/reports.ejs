@@ -1,5 +1,5 @@
 <%- include('partials/header', { title: 'Project reports', page: 'reports', user }) %>
-<h2>Project performance reports</h2><p>Generate a report only for a project accessible to your account.</p>
-<form id="reportForm"><p><label>Project ID<br><input name="projectId" required></label></p><button type="submit">Generate report</button></form>
-<ul id="reportProjects"><li>Loading accessible projects...</li></ul>
+<h2>Project performance</h2><p>Generate a report for a project you’re part of.</p>
+<form id="reportForm" class="form-grid"><label>Project<select name="projectId" id="reportProject" required><option value="">Choose a project</option></select></label><button type="submit">Generate report</button></form>
+<ul id="reportProjects" class="card-list"><li class="empty-state">Choose a project to generate its report.</li></ul>
 <%- include('partials/footer') %>

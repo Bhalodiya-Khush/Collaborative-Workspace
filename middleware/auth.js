@@ -1,11 +1,18 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const getCookie = (request, name) => {
+  const value = request.headers.cookie || '';
+  const entry = value.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null;
+};
+
 const requireAuth = async (req, res, next) => {
   const authorization = req.headers.authorization;
-  const token = authorization && authorization.startsWith('Bearer ')
+  const bearerToken = authorization && authorization.startsWith('Bearer ')
     ? authorization.slice(7)
     : null;
+  const token = bearerToken || getCookie(req, 'collaborativeWorkspaceToken');
 
   if (!token) {
     return res.status(401).json({ message: 'Authentication required. Please log in.' });
@@ -19,6 +26,12 @@ const requireAuth = async (req, res, next) => {
       return res.status(401).json({ message: 'User account is not available.' });
     }
     if ((decoded.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+      res.clearCookie('collaborativeWorkspaceToken', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+      });
       return res.status(401).json({ message: 'Your session is no longer valid. Please log in again.' });
     }
 

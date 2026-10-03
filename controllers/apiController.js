@@ -25,7 +25,7 @@ const {
 const normalizeEmail = (email) => email.trim().toLowerCase();
 const workspaceFilterForUser = (user) => (
   user.role === 'admin'
-    ? {}
+    ? { owner: user._id, status: 'active' }
     : {
       status: 'active',
       $or: [{ owner: user._id }, { members: user._id }],
@@ -88,11 +88,14 @@ const handleGetHealth = (req, res) => {
 const handleGetDashboard = async (req, res) => {
   try {
     if (req.user.role === 'admin') {
+      const workspaceIds = await Workspace.find(workspaceFilterForUser(req.user)).distinct('_id');
+      const projectIds = await Project.find({ workspace: { $in: workspaceIds } }).distinct('_id');
+      const memberIds = await Workspace.find({ _id: { $in: workspaceIds } }).distinct('members');
       const [totalUsers, totalWorkspaces, totalProjects, totalTasks] = await Promise.all([
-        User.countDocuments(),
-        Workspace.countDocuments(),
-        Project.countDocuments(),
-        Task.countDocuments(),
+        User.countDocuments({ _id: { $in: memberIds }, isActive: true }),
+        Workspace.countDocuments({ _id: { $in: workspaceIds } }),
+        Project.countDocuments({ _id: { $in: projectIds } }),
+        Task.countDocuments({ project: { $in: projectIds } }),
       ]);
 
       return res.json({ totalUsers, totalWorkspaces, totalProjects, totalTasks });
@@ -286,6 +289,11 @@ const handlePatchUsersMePassword = async (req, res) => {
 const handleGetUsers = async (req, res) => {
   try {
     let userFilter = {};
+    if (req.user.role === 'admin') {
+      const workspaceIds = await Workspace.find(workspaceFilterForUser(req.user)).distinct('_id');
+      const memberIds = await Workspace.find({ _id: { $in: workspaceIds } }).distinct('members');
+      userFilter = { _id: { $in: memberIds }, isActive: true };
+    }
     if (req.user.role === 'project_manager') {
       const projectIds = await getAccessibleProjectIds(req.user, 'manage');
       const [managedProjects, members] = await Promise.all([
@@ -310,46 +318,18 @@ const handleGetUsers = async (req, res) => {
         isActive: true,
       };
     }
+    if (req.query.available === 'true') {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Only workspace administrators can view the member directory.' });
+      }
+      userFilter = { isActive: true };
+    }
     const users = await User.find(userFilter)
       .select('fullName email role profileImage skills isActive createdAt')
       .sort({ createdAt: -1 });
     res.json(users.map(sanitizeUser));
   } catch (error) {
     res.status(500).json({ message: 'Users could not be loaded.', error: error.message });
-  }
-};
-
-const handlePatchUsersUserIdRole = async (req, res) => {
-  try {
-    const allowedRoles = ['admin', 'project_manager', 'developer', 'viewer'];
-    const { role } = req.body;
-
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({
-        message: `Role must be one of: ${allowedRoles.join(', ')}.`,
-      });
-    }
-
-    const roleConflict = await validateProjectRoleChange(req.params.userId, role);
-    if (roleConflict) return res.status(409).json({ message: roleConflict });
-
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { role },
-      { new: true, runValidators: true }
-    );
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    disconnectUserSockets(user._id);
-    res.json({
-      message: 'User role updated successfully.',
-      user: sanitizeUser(user),
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'User role update failed.', error: error.message });
   }
 };
 
@@ -479,7 +459,7 @@ const handleGetWorkspaces = async (req, res) => {
 
 const handleGetWorkspacesWorkspaceIdMembers = async (req, res) => {
   try {
-    const members = await User.find({ _id: { $in: req.workspace.members } })
+    const members = await User.find({ _id: { $in: req.workspace.members }, isActive: true })
       .select('fullName email role profileImage skills isActive createdAt');
     res.json(members);
   } catch (error) {
@@ -572,6 +552,9 @@ const handlePatchWorkspacesWorkspaceIdRole = async (req, res) => {
     if (!isWorkspaceMember) {
       return res.status(400).json({ message: 'The user must be an active workspace member.' });
     }
+    if (req.workspace.owner.toString() === userId) {
+      return res.status(400).json({ message: 'The workspace administrator role cannot be changed here.' });
+    }
 
     const roleConflict = await validateProjectRoleChange(userId, role);
     if (roleConflict) return res.status(409).json({ message: roleConflict });
@@ -614,6 +597,10 @@ const handlePostProjects = async (req, res) => {
 
     if (typeof name !== 'string' || !name.trim() || !workspace || !projectManager) {
       return res.status(400).json({ message: 'Project name, workspace and project manager are required.' });
+    }
+    if (!req.workspace || req.workspace._id.toString() !== String(workspace)
+      || req.workspace.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Choose a workspace you administer.' });
     }
     if (!Array.isArray(developers)) {
       return res.status(400).json({ message: 'Project developers must be an array of user IDs.' });
@@ -1628,24 +1615,26 @@ const handlePatchMeetingsMeetingIdEnd = async (req, res) => {
     if (!meeting) {
       return res.status(404).json({ message: 'Meeting not found.' });
     }
-    if (req.user.role !== 'admin') {
-      const workspace = meeting.workspace;
-      if (!workspace || workspace.status !== 'active'
-        || (workspace.owner.toString() !== req.user._id.toString()
-          && !workspace.members.some((member) => member.toString() === req.user._id.toString()))) {
+    const workspace = meeting.workspace;
+    const isWorkspaceMember = workspace && workspace.status === 'active'
+      && (workspace.owner.toString() === req.user._id.toString()
+        || workspace.members.some((member) => member.toString() === req.user._id.toString()));
+    const isWorkspaceAdmin = req.user.role === 'admin'
+      && workspace?.owner.toString() === req.user._id.toString();
+    if (!isWorkspaceMember) {
+      return res.status(404).json({ message: 'Meeting not found or access denied.' });
+    }
+    let isProjectManager = false;
+    if (meeting.project) {
+      const projectAccess = await resolveProjectAccess(req.user, meeting.project._id);
+      if (!projectAccess || !projectAccess.permissions.has('read')) {
         return res.status(404).json({ message: 'Meeting not found or access denied.' });
       }
-      if (meeting.project) {
-        const projectAccess = await resolveProjectAccess(req.user, meeting.project._id);
-        if (!projectAccess || !projectAccess.permissions.has('read')) {
-          return res.status(404).json({ message: 'Meeting not found or access denied.' });
-        }
-      }
+      isProjectManager = req.user.role === 'project_manager'
+        && projectAccess.project.projectManager.toString() === req.user._id.toString();
     }
     const isHost = meeting.host.toString() === req.user._id.toString();
-    const isProjectManager = req.user.role === 'project_manager' && meeting.project
-      && meeting.project.projectManager.toString() === req.user._id.toString();
-    if (req.user.role !== 'admin' && !isHost && !isProjectManager) {
+    if (!isWorkspaceAdmin && !isHost && !isProjectManager) {
       return res.status(403).json({ message: 'Only the host, project manager, or admin can end this meeting.' });
     }
     if (meeting.status === 'completed' || meeting.status === 'cancelled') {
@@ -1834,7 +1823,13 @@ const handlePostNotifications = async (req, res) => {
       return res.status(404).json({ message: 'Active notification recipient not found.' });
     }
 
-    if (req.user.role === 'project_manager') {
+    if (req.user.role === 'admin') {
+      const workspaceIds = await Workspace.find(workspaceFilterForUser(req.user)).distinct('_id');
+      const memberIds = await Workspace.find({ _id: { $in: workspaceIds } }).distinct('members');
+      if (!memberIds.some((memberId) => memberId.toString() === recipient._id.toString())) {
+        return res.status(403).json({ message: 'You can notify only members of workspaces you administer.' });
+      }
+    } else if (req.user.role === 'project_manager') {
       const managedProjectIds = await getAccessibleProjectIds(req.user, 'manage');
       const managedMembers = await ProjectMember.find({
         project: { $in: managedProjectIds },
@@ -2018,7 +2013,6 @@ module.exports = {
   handlePatchUsersMe,
   handlePatchUsersMePassword,
   handleGetUsers,
-  handlePatchUsersUserIdRole,
   handlePostWorkspaces,
   handlePatchWorkspacesWorkspaceId,
   handleGetWorkspaces,
