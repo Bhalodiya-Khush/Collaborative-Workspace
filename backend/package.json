@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seed.js",
     "migrate": "node scripts/migrate.js",
-    "test": "node --check server.js && node --check controllers/apiController.js && node --check middleware/auth.js && node --check middleware/projectAccess.js && node --check middleware/workspaceAccess.js && node --check middleware/roles.js && node --check middleware/upload.js && node --check routes/api.js && node --check models/User.js && node --check models/Meeting.js && node --check models/ChatMessage.js && node --check services/realtime.js && node --check scripts/seed.js && node --check scripts/migrate.js && node --test tests/auth.test.js tests/projectAccess.test.js"
+    "test": "node --check server.js && node --check controllers/apiController.js && node --check middleware/auth.js && node --check middleware/projectAccess.js && node --check middleware/workspaceAccess.js && node --check middleware/roles.js && node --check middleware/upload.js && node --check routes/api.js && node --check models/User.js && node --check models/WorkspaceMember.js && node --check models/Meeting.js && node --check models/ChatMessage.js && node --check services/realtime.js && node --check scripts/seed.js && node --check scripts/migrate.js && node --test tests/auth.test.js tests/projectAccess.test.js tests/roleScope.test.js tests/workspaceAccess.test.js"
   },
   "repository": {
     "type": "git",

@@ -113,6 +113,32 @@ button {
   margin-bottom: 5px;
 }
 
+.workspace-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding: 0 4px;
+}
+
+.workspace-switcher span {
+  color: #a4b8af;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
+.workspace-switcher select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid #42675d;
+  border-radius: 6px;
+  background: #24574c;
+  color: #fff;
+  font-size: 12px;
+}
+
 .sidebar-link {
   display: flex;
   align-items: center;
@@ -452,7 +478,8 @@ button {
 
   .sidebar-logo div:last-child,
   .sidebar-link span,
-  .section-title {
+  .section-title,
+  .workspace-switcher {
     display: none;
   }
 

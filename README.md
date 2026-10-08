@@ -114,9 +114,10 @@ npm run dev
 ## Key Features
 
 1. **Role-Based Access Control (RBAC)**:
-   - **Admin**: System oversight, user role management, workspaces, global projects.
-   - **Project Manager**: Project planning, sprint task management, submission reviews.
-   - **Developer**: Assigned task execution, code file submission, progress updates.
+   - Roles are stored on workspace and project memberships, not on the User account.
+   - **Workspace Admin**: Manages the workspace and its members.
+   - **Project Manager**: Plans and manages the projects where they hold that membership.
+   - **Developer**: Handles assigned work and submits code in projects where they hold that membership.
 
 2. **Code Submissions & File Management**:
    - Multi-file uploads (`.zip`, `.js`, `.py`, `.java`, `.cpp`, `.cs`, `.html`, `.css`, etc.).

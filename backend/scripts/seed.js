@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const connectDB = require('../config/db');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
+const WorkspaceMember = require('../models/WorkspaceMember');
 const Project = require('../models/Project');
 const ProjectMember = require('../models/ProjectMember');
 const Task = require('../models/Task');
@@ -26,28 +27,24 @@ const seed = async () => {
       fullName: 'System Admin',
       email: 'admin@workspace.com',
       password: await bcrypt.hash('admin123', 10),
-      role: 'admin',
     });
 
     const pm = await User.create({
       fullName: 'Project Manager',
       email: 'manager@workspace.com',
       password: await bcrypt.hash('manager123', 10),
-      role: 'project_manager',
     });
 
     const dev1 = await User.create({
       fullName: 'Developer One',
       email: 'dev1@workspace.com',
       password: await bcrypt.hash('dev123', 10),
-      role: 'developer',
     });
 
     const dev2 = await User.create({
       fullName: 'Developer Two',
       email: 'dev2@workspace.com',
       password: await bcrypt.hash('dev123', 10),
-      role: 'developer',
     });
 
     const workspace = await Workspace.create({
@@ -73,6 +70,12 @@ const seed = async () => {
       { _id: { $in: [admin._id, pm._id, dev1._id, dev2._id] } },
       { $addToSet: { workspaceIds: workspace._id } }
     );
+    await WorkspaceMember.create([
+      { workspace: workspace._id, user: admin._id, role: 'admin' },
+      { workspace: workspace._id, user: pm._id, role: 'project_manager' },
+      { workspace: workspace._id, user: dev1._id, role: 'developer' },
+      { workspace: workspace._id, user: dev2._id, role: 'developer' },
+    ]);
     await User.updateMany(
       { _id: { $in: [pm._id, dev1._id, dev2._id] } },
       { $addToSet: { projectIds: project._id } }

@@ -8,12 +8,16 @@ import {
   UserCheck,
   CheckCircle2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Workspaces() {
   const { user, updateUser } = useAuth();
+  const navigate = useNavigate();
+  const { selectedWorkspaceId, workspaceRole, selectWorkspace, refreshWorkspaces } = useWorkspace();
   const [workspaces, setWorkspaces] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -21,7 +25,7 @@ function Workspaces() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const loadWorkspaces = async () => {
+  const loadWorkspaces = useCallback(async () => {
     try {
       const response = await api.get('/workspaces');
       setWorkspaces(response.data || []);
@@ -30,19 +34,21 @@ function Workspaces() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadWorkspaces();
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'project_manager') {
-      api.get('/users')
+    queueMicrotask(loadWorkspaces);
+  }, [loadWorkspaces]);
+
+  useEffect(() => {
+    if (selectedWorkspaceId && workspaceRole === 'admin') {
+      api.get('/users', { params: { workspaceId: selectedWorkspaceId, available: 'true' } })
         .then((response) => setAllUsers(response.data || []))
-        .catch(() => {});
+        .catch((requestError) => {
+          setError(requestError.response?.data?.message || 'Available members could not be loaded.');
+        });
     }
-  }, [user?.role]);
+  }, [selectedWorkspaceId, workspaceRole]);
 
   const createWorkspace = async (event) => {
     event.preventDefault();
@@ -60,9 +66,15 @@ function Workspaces() {
       setSuccess(`Workspace "${response.data.workspace.name}" created! You are now the Workspace Admin.`);
       event.currentTarget.reset();
       setShowForm(false);
+      const accessibleWorkspaces = await refreshWorkspaces();
+      selectWorkspace(response.data.workspace._id);
       await loadWorkspaces();
-      // Also refresh allUsers now that user is an admin
-      api.get('/users').then((res) => setAllUsers(res.data || [])).catch(() => {});
+      const currentWorkspaceId = response.data.workspace._id;
+      if (accessibleWorkspaces.some((workspace) => workspace._id === currentWorkspaceId)) {
+        api.get('/users', { params: { workspaceId: currentWorkspaceId, available: 'true' } })
+          .then((res) => setAllUsers(res.data || []))
+          .catch((requestError) => setError(requestError.response?.data?.message || 'Available members could not be loaded.'));
+      }
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Workspace could not be created.');
     }
@@ -94,6 +106,7 @@ function Workspaces() {
       });
       setSuccess('Member role updated successfully in this workspace.');
       await loadWorkspaces();
+      await refreshWorkspaces();
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Role change failed.');
     }
@@ -193,6 +206,11 @@ function Workspaces() {
           {workspaces.map((workspace) => {
             const isOwner =
               (workspace.owner?._id || workspace.owner)?.toString() === user?._id?.toString();
+            const currentMembership = (workspace.members || []).find(
+              (member) => String(member._id) === String(user?._id)
+            );
+            const role = isOwner ? 'admin' : currentMembership?.role;
+            const canManageWorkspace = role === 'admin';
 
             return (
               <div className="workspace-card" key={workspace._id}>
@@ -201,13 +219,13 @@ function Workspaces() {
                     {workspace.name.charAt(0).toUpperCase()}
                   </div>
 
-                  {isOwner ? (
+                  {role === 'admin' ? (
                     <span className="workspace-owner-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: '#faede6', color: '#d9764e', border: '1px solid #f6b27e', borderRadius: '20px', fontSize: '12px', fontWeight: '700' }}>
                       <Crown size={14} /> Workspace Admin
                     </span>
                   ) : (
                     <span className="workspace-member-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: '#edf1eb', color: '#183d35', border: '1px solid #d7dfd6', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
-                      <UserCheck size={14} /> Member
+                      <UserCheck size={14} /> {role?.replace('_', ' ') || 'Member'}
                     </span>
                   )}
                 </div>
@@ -239,6 +257,18 @@ function Workspaces() {
                     <span>{workspace.status || 'active'}</span>
                   </div>
                 </div>
+
+                <button
+                  className="open-workspace-button"
+                  type="button"
+                  onClick={() => {
+                    selectWorkspace(workspace._id);
+                    navigate('/projects');
+                  }}
+                  style={{ marginTop: '14px' }}
+                >
+                  <FolderKanban size={15} /> Open Workspace
+                </button>
 
                 {/* MEMBERS MANAGEMENT */}
                 <div className="workspace-members-section" style={{ borderTop: '1px solid #d7dfd6', paddingTop: '14px', marginTop: '14px' }}>
@@ -273,7 +303,7 @@ function Workspaces() {
                             </span>
                           </div>
 
-                          {isOwner && !isMemberOwner ? (
+                          {canManageWorkspace && !isMemberOwner ? (
                             <select
                               value={member.role || 'developer'}
                               onChange={(e) => changeMemberRole(workspace._id, member._id, e.target.value)}
@@ -302,7 +332,7 @@ function Workspaces() {
                 </div>
 
                 {/* ADD MEMBER FORM (FOR WORKSPACE ADMIN ONLY) */}
-                {isOwner && (
+                {canManageWorkspace && workspace._id === selectedWorkspaceId && (
                   <form
                     className="workspace-add-member"
                     onSubmit={(event) => addMember(event, workspace._id)}
@@ -324,7 +354,7 @@ function Workspaces() {
                         )
                         .map((account) => (
                           <option key={account._id} value={account._id}>
-                            {account.fullName} ({account.role?.replace('_', ' ')})
+                            {account.fullName} ({account.email})
                           </option>
                         ))}
                     </select>

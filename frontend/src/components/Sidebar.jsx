@@ -13,10 +13,16 @@ import {
 } from 'lucide-react';
 
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 
 function Sidebar() {
-  const { user } = useAuth();
+  const {
+    workspaces,
+    selectedWorkspaceId,
+    workspaceRole,
+    projectRoles,
+    selectWorkspace,
+  } = useWorkspace();
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Workspaces', path: '/workspaces', icon: Briefcase },
@@ -26,9 +32,21 @@ function Sidebar() {
     { name: 'Meetings', path: '/meetings', icon: Video },
     { name: 'Messages', path: '/messages', icon: MessageSquare },
     { name: 'Notifications', path: '/notifications', icon: Bell },
-    { name: 'Monitoring', path: '/monitoring', icon: BarChart3, roles: ['admin', 'project_manager'] },
-    { name: 'Reports', path: '/reports', icon: BarChart3, roles: ['admin', 'project_manager'] },
-    { name: 'Users', path: '/users', icon: Users, roles: ['admin', 'project_manager'] },
+    {
+      name: 'Monitoring',
+      path: '/monitoring',
+      icon: BarChart3,
+      workspaceRoles: ['admin', 'project_manager'],
+      projectRoles: ['admin', 'project_manager'],
+    },
+    {
+      name: 'Reports',
+      path: '/reports',
+      icon: BarChart3,
+      workspaceRoles: ['admin', 'project_manager'],
+      projectRoles: ['admin', 'project_manager'],
+    },
+    { name: 'Users', path: '/users', icon: Users, workspaceRoles: ['admin', 'project_manager'] },
   ];
 
   return (
@@ -49,8 +67,27 @@ function Sidebar() {
           MAIN MENU
         </p>
 
+        <label className="workspace-switcher">
+          <span>ACTIVE WORKSPACE</span>
+          <select
+            value={selectedWorkspaceId}
+            onChange={(event) => selectWorkspace(event.target.value)}
+            aria-label="Select active workspace"
+          >
+            <option value="">Select a workspace</option>
+            {workspaces.map((workspace) => (
+              <option key={workspace._id} value={workspace._id}>{workspace.name}</option>
+            ))}
+          </select>
+        </label>
+
         {menuItems
-          .filter((item) => !item.roles || item.roles.includes(user?.role))
+          .filter((item) => (
+            !item.workspaceRoles && !item.projectRoles
+          ) || (
+            item.workspaceRoles?.includes(workspaceRole)
+            || item.projectRoles?.some((role) => projectRoles.includes(role))
+          ))
           .map((item) => {
           const Icon = item.icon;
 

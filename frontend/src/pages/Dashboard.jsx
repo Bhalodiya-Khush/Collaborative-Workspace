@@ -1,45 +1,42 @@
 import {
-  FolderKanban,
-  Clock3,
-  Users,
-  Briefcase,
-  FileCheck2,
-  Video,
   ArrowUpRight,
-  Plus,
+  Briefcase,
+  CheckCircle2,
+  Clock3,
+  FolderKanban,
   ListTodo,
+  Video,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../context/useAuth';
 import api from '../services/api';
 
-const roleLabels = {
-  admin: 'Administrator',
-  project_manager: 'Project Manager',
-  developer: 'Developer',
-};
-
 function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [dashboard, setDashboard] = useState(null);
+  const [workspaces, setWorkspaces] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        const [dashboardResponse, projectsResponse] = await Promise.all([
-          api.get('/dashboard'),
+        const [workspacesResponse, projectsResponse] = await Promise.all([
+          api.get('/workspaces'),
           api.get('/projects'),
         ]);
 
-        setDashboard(dashboardResponse.data);
+        setWorkspaces(workspacesResponse.data || []);
         setProjects(projectsResponse.data || []);
-      } catch (error) {
-        console.error('Dashboard loading failed:', error);
+      } catch (requestError) {
+        console.error('Dashboard loading failed:', requestError);
+        setError(
+          requestError.response?.data?.message ||
+          'Your workspaces and projects could not be loaded.'
+        );
       } finally {
         setLoading(false);
       }
@@ -48,46 +45,22 @@ function Dashboard() {
     loadDashboard();
   }, []);
 
-  const role = user?.role;
-  const statCards = useMemo(() => {
-    const stats = dashboard?.stats || dashboard || {};
-    if (role === 'admin') {
-      return [
-        { title: 'Total Users', value: stats.totalUsers ?? 0, icon: Users, link: '/users' },
-        { title: 'Workspaces', value: stats.totalWorkspaces ?? 0, icon: Briefcase, link: '/workspaces' },
-        { title: 'Projects', value: stats.totalProjects ?? 0, icon: FolderKanban, link: '/projects' },
-        { title: 'Pending Reviews', value: stats.pendingSubmissions ?? 0, icon: FileCheck2, link: '/submissions' },
-      ];
-    }
-
-    if (role === 'project_manager') {
-      return [
-        { title: 'My Projects', value: stats.totalProjects ?? 0, icon: FolderKanban, link: '/projects' },
-        { title: 'Team Tasks', value: stats.totalTasks ?? 0, icon: ListTodo, link: '/tasks' },
-        { title: 'Pending Tasks', value: stats.pendingTasks ?? 0, icon: Clock3, link: '/tasks' },
-        { title: 'Pending Reviews', value: stats.pendingSubmissions ?? 0, icon: FileCheck2, link: '/submissions' },
-      ];
-    }
-
-    return [
-      { title: 'My Projects', value: stats.totalProjects ?? 0, icon: FolderKanban, link: '/projects' },
-      { title: 'My Tasks', value: stats.totalTasks ?? 0, icon: ListTodo, link: '/tasks' },
-      { title: 'Pending Tasks', value: stats.pendingTasks ?? 0, icon: Clock3, link: '/tasks' },
-      { title: 'My Submissions', value: stats.mySubmissions ?? 0, icon: FileCheck2, link: '/submissions' },
-    ];
-  }, [role, dashboard]);
-
-  const title = role === 'admin'
-    ? 'Admin Control Center'
-    : role === 'project_manager'
-      ? 'Project Manager Dashboard'
-      : 'Developer Workspace';
-
-  const description = role === 'admin'
-    ? 'Monitor the organization, users, workspaces and project activity.'
-    : role === 'project_manager'
-      ? 'Plan projects, manage your team and review development progress.'
-      : 'Focus on your assigned projects, tasks, submissions and meetings.';
+  const statCards = [
+    { title: 'Workspaces', value: workspaces.length, icon: Briefcase, link: '/workspaces' },
+    { title: 'Projects', value: projects.length, icon: FolderKanban, link: '/projects' },
+    {
+      title: 'In Progress',
+      value: projects.filter((project) => project.status === 'in_progress').length,
+      icon: Clock3,
+      link: '/projects',
+    },
+    {
+      title: 'Completed',
+      value: projects.filter((project) => project.status === 'completed').length,
+      icon: CheckCircle2,
+      link: '/projects',
+    },
+  ];
 
   if (loading) {
     return (
@@ -102,43 +75,27 @@ function Dashboard() {
     <div className="dashboard">
       <div className="dashboard-hero">
         <div>
-          <span className="eyebrow">{roleLabels[role] || 'Workspace Member'}</span>
-          <h1>{title}</h1>
+          <span className="eyebrow">COLLABORATIVE WORKSPACE</span>
+          <h1>Your Dashboard</h1>
           <p>
-            Welcome, <strong>{user?.fullName || 'User'}</strong>. {description}
+            Welcome, <strong>{user?.fullName || 'User'}</strong>. See the workspaces
+            and projects available to you.
           </p>
         </div>
 
         <div className="dashboard-actions">
-          {(role === 'admin' || role === 'project_manager') && (
-            <button className="secondary-button" onClick={() => navigate('/projects')}>
-              <FolderKanban size={17} />
-              View Projects
-            </button>
-          )}
-
-          {role === 'admin' && (
-            <button className="primary-button" onClick={() => navigate('/users')}>
-              <Users size={17} />
-              Manage Users
-            </button>
-          )}
-
-          {role === 'project_manager' && (
-            <button className="primary-button" onClick={() => navigate('/tasks')}>
-              <Plus size={17} />
-              Create Task
-            </button>
-          )}
-
-          {role === 'developer' && (
-            <button className="primary-button" onClick={() => navigate('/submissions')}>
-              <FileCheck2 size={17} />
-              My Submissions
-            </button>
-          )}
+          <button className="secondary-button" onClick={() => navigate('/workspaces')}>
+            <Briefcase size={17} />
+            View Workspaces
+          </button>
+          <button className="primary-button" onClick={() => navigate('/projects')}>
+            <FolderKanban size={17} />
+            View Projects
+          </button>
         </div>
       </div>
+
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       <div className="stats-grid">
         {statCards.map((stat) => {
@@ -168,12 +125,8 @@ function Dashboard() {
         <section className="dashboard-card">
           <div className="card-header">
             <div>
-              <h3>{role === 'developer' ? 'My Projects' : 'Active Projects'}</h3>
-              <p>
-                {role === 'developer'
-                  ? 'Projects where you are a developer'
-                  : 'Projects currently available to your role'}
-              </p>
+              <h3>Projects</h3>
+              <p>Projects you can access</p>
             </div>
 
             <button className="text-button" onClick={() => navigate('/projects')}>
@@ -191,9 +144,7 @@ function Dashboard() {
                 <div className="project-info">
                   <div>
                     <strong>{project.name}</strong>
-                    <span>
-                      {project.projectManager?.fullName || 'Project team'}
-                    </span>
+                    <span>{project.workspace?.name || project.projectManager?.fullName || 'Project team'}</span>
                   </div>
                   <strong>{project.progress || 0}%</strong>
                 </div>
@@ -207,7 +158,7 @@ function Dashboard() {
               </button>
             ))}
 
-            {projects.length === 0 && (
+            {projects.length === 0 && !error && (
               <div className="empty-state">
                 <FolderKanban size={28} />
                 <p>No projects are available for your account yet.</p>
@@ -216,43 +167,50 @@ function Dashboard() {
           </div>
         </section>
 
-        <section className="dashboard-card role-panel">
+        <section className="dashboard-card">
           <div className="card-header">
             <div>
-              <h3>Quick Actions</h3>
-              <p>Actions available to your role</p>
+              <h3>Workspaces</h3>
+              <p>Workspaces you can access</p>
             </div>
+
+            <button className="text-button" onClick={() => navigate('/workspaces')}>
+              View all
+            </button>
           </div>
 
-          <div className="quick-action-grid">
-            {role === 'admin' && (
-              <>
-                <button onClick={() => navigate('/users')}><Users size={18} /> Manage users</button>
-                <button onClick={() => navigate('/workspaces')}><Briefcase size={18} /> Workspaces</button>
-                <button onClick={() => navigate('/monitoring')}><ArrowUpRight size={18} /> Monitoring</button>
-                <button onClick={() => navigate('/reports')}><FileCheck2 size={18} /> Reports</button>
-              </>
-            )}
+          <div className="project-list">
+            {workspaces.slice(0, 5).map((workspace) => (
+              <button
+                className="project-item project-item-button"
+                key={workspace._id}
+                onClick={() => navigate('/workspaces')}
+              >
+                <div className="project-info">
+                  <div>
+                    <strong>{workspace.name}</strong>
+                    <span>{workspace.description || 'Collaborative workspace'}</span>
+                  </div>
+                  <strong>{(workspace.projects || []).length} projects</strong>
+                </div>
+              </button>
+            ))}
 
-            {role === 'project_manager' && (
-              <>
-                <button onClick={() => navigate('/projects')}><FolderKanban size={18} /> Manage projects</button>
-                <button onClick={() => navigate('/tasks')}><ListTodo size={18} /> Manage tasks</button>
-                <button onClick={() => navigate('/submissions')}><FileCheck2 size={18} /> Review submissions</button>
-                <button onClick={() => navigate('/meetings')}><Video size={18} /> Schedule meeting</button>
-              </>
-            )}
-
-            {role === 'developer' && (
-              <>
-                <button onClick={() => navigate('/tasks')}><ListTodo size={18} /> My tasks</button>
-                <button onClick={() => navigate('/submissions')}><FileCheck2 size={18} /> Submit work</button>
-                <button onClick={() => navigate('/meetings')}><Video size={18} /> My meetings</button>
-                <button onClick={() => navigate('/messages')}><Users size={18} /> Team chat</button>
-              </>
+            {workspaces.length === 0 && !error && (
+              <div className="empty-state">
+                <Briefcase size={28} />
+                <p>No workspaces are available for your account yet.</p>
+              </div>
             )}
           </div>
         </section>
+      </div>
+
+      <div className="quick-action-grid" style={{ marginTop: '20px' }}>
+        <button onClick={() => navigate('/tasks')}><ListTodo size={18} /> Tasks</button>
+        <button onClick={() => navigate('/meetings')}><Video size={18} /> Meetings</button>
+        <button onClick={() => navigate('/projects')}><FolderKanban size={18} /> Projects</button>
+        <button onClick={() => navigate('/workspaces')}><Briefcase size={18} /> Workspaces</button>
       </div>
     </div>
   );

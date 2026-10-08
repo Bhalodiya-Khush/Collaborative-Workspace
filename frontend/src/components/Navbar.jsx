@@ -7,11 +7,13 @@ import {
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 
 function Navbar() {
   const { user, logout } = useAuth();
+  const { workspaceRole, selectedWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -56,7 +58,9 @@ function Navbar() {
             </strong>
 
             <span>
-              {user?.role?.replace('_', ' ') || 'Member'}
+              {selectedWorkspace
+                ? `${selectedWorkspace.name} · ${workspaceRole?.replace('_', ' ') || 'Member'}`
+                : 'Select a workspace'}
             </span>
           </div>
         </div>

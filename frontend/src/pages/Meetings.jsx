@@ -17,17 +17,18 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Meetings() {
   const { user } = useAuth();
+  const { selectedWorkspaceId, workspaceRole } = useWorkspace();
   const [meetings, setMeetings] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
   const [projects, setProjects] = useState([]);
   const [members, setMembers] = useState([]);
   const [scopeFilter, setScopeFilter] = useState('all'); // 'all' | 'workspace' | 'project'
   const [meetingScope, setMeetingScope] = useState('workspace'); // form state
-  const [selectedWorkspace, setSelectedWorkspace] = useState('');
   const [selectedProject, setSelectedProject] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [activeMeetingRoom, setActiveMeetingRoom] = useState(null);
@@ -40,7 +41,9 @@ function Meetings() {
   const loadMeetings = async () => {
     try {
       const response = await api.get('/meetings');
-      setMeetings(response.data || []);
+      setMeetings(selectedWorkspaceId
+        ? (response.data || []).filter((meeting) => String(meeting.workspace?._id || meeting.workspace) === selectedWorkspaceId)
+        : response.data || []);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Meetings could not be loaded.');
     }
@@ -48,16 +51,23 @@ function Meetings() {
 
   useEffect(() => {
     const requests = [api.get('/meetings'), api.get('/workspaces'), api.get('/projects')];
-    if (['admin', 'project_manager'].includes(user?.role)) requests.push(api.get('/users'));
+    if (['admin', 'project_manager'].includes(workspaceRole) && selectedWorkspaceId) {
+      requests.push(api.get('/users', { params: { workspaceId: selectedWorkspaceId } }));
+    }
     Promise.all(requests)
       .then(([meetingResponse, workspaceResponse, projectResponse, userResponse]) => {
-        setMeetings(meetingResponse.data || []);
+        setMeetings(selectedWorkspaceId
+          ? (meetingResponse.data || []).filter((meeting) => String(meeting.workspace?._id || meeting.workspace) === selectedWorkspaceId)
+          : meetingResponse.data || []);
         setWorkspaces(workspaceResponse.data || []);
-        setProjects(projectResponse.data || []);
+        const accessibleProjects = projectResponse.data || [];
+        setProjects(selectedWorkspaceId
+          ? accessibleProjects.filter((project) => String(project.workspace?._id || project.workspace) === selectedWorkspaceId)
+          : accessibleProjects);
         setMembers(userResponse?.data || []);
       })
       .catch((requestError) => setError(requestError.response?.data?.message || 'Meeting data could not be loaded.'));
-  }, [user?.role]);
+  }, [selectedWorkspaceId, workspaceRole]);
 
   const scheduleMeeting = async (event) => {
     event.preventDefault();
@@ -65,7 +75,7 @@ function Meetings() {
     setSuccess('');
     const formData = new FormData(event.currentTarget);
 
-    let workspaceId = selectedWorkspace;
+    let workspaceId = selectedWorkspaceId;
     let projectId = undefined;
 
     if (meetingScope === 'project') {
@@ -95,7 +105,6 @@ function Meetings() {
       });
       setShowForm(false);
       setSelectedProject('');
-      setSelectedWorkspace('');
       setSuccess('Meeting scheduled successfully! Invitations have been sent.');
       await loadMeetings();
     } catch (requestError) {
@@ -194,11 +203,11 @@ function Meetings() {
               <select
                 name="workspace"
                 required
-                value={selectedWorkspace}
-                onChange={(e) => setSelectedWorkspace(e.target.value)}
+                value={selectedWorkspaceId}
+                disabled
               >
                 <option value="" disabled>Select Workspace</option>
-                {workspaces.map((ws) => (
+                {workspaces.filter((ws) => ws._id === selectedWorkspaceId).map((ws) => (
                   <option key={ws._id} value={ws._id}>{ws.name}</option>
                 ))}
               </select>
@@ -551,7 +560,7 @@ function Meetings() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                {['admin', 'project_manager'].includes(user?.role) && (
+                {['admin', 'project_manager'].includes(workspaceRole) && (
                   <button
                     onClick={() => endMeeting(activeMeetingRoom._id)}
                     style={{ background: '#991b1b', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}

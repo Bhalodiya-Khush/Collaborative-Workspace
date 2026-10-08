@@ -9,16 +9,17 @@ import {
   Calendar,
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Profile() {
   const { user } = useAuth();
+  const { workspaceRole } = useWorkspace();
 
   const [profileData, setProfileData] = useState({
     fullName: '',
     email: '',
     skills: '',
-    role: '',
     createdAt: '',
   });
 
@@ -43,7 +44,6 @@ function Profile() {
             fullName: currentUser.fullName || '',
             email: currentUser.email || '',
             skills: Array.isArray(currentUser.skills) ? currentUser.skills.join(', ') : '',
-            role: currentUser.role || 'developer',
             createdAt: currentUser.createdAt || '',
           });
         }
@@ -53,7 +53,6 @@ function Profile() {
             fullName: user.fullName || '',
             email: user.email || '',
             skills: Array.isArray(user.skills) ? user.skills.join(', ') : '',
-            role: user.role || 'developer',
             createdAt: user.createdAt || '',
           });
         }
@@ -180,7 +179,7 @@ function Profile() {
                   style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
                 >
                   <Shield size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                  {profileData.role?.replace('_', ' ') || 'Member'}
+                  {workspaceRole?.replace('_', ' ') || 'Select a workspace'}
                 </span>
                 {profileData.createdAt && (
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)', display: 'flex', alignItems: 'center', gap: '4px' }}>

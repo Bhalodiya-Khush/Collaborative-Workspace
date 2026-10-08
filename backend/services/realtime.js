@@ -38,13 +38,12 @@ const attachRealtimeServer = (httpServer) => {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.userId).select('_id role fullName isActive tokenVersion');
+      const user = await User.findById(decoded.userId).select('_id fullName isActive tokenVersion');
       if (!user || !user.isActive || (decoded.tokenVersion || 0) !== (user.tokenVersion || 0)) {
         return next(new Error('Authentication required.'));
       }
 
       socket.data.userId = user._id.toString();
-      socket.data.role = user.role;
       socket.data.displayName = user.fullName;
       socket.data.tokenExpiresAt = decoded.exp;
       return next();
@@ -70,10 +69,7 @@ const attachRealtimeServer = (httpServer) => {
     socket.on('project:chat:join', async (payload = {}, callback) => {
       try {
         const projectId = typeof payload.projectId === 'string' ? payload.projectId : '';
-        const access = await resolveProjectAccess({
-          _id: socket.data.userId,
-          role: socket.data.role,
-        }, projectId);
+        const access = await resolveProjectAccess({ _id: socket.data.userId }, projectId);
         if (!access || !access.permissions.has('read')) {
           await socket.leave(projectChatRoom(projectId));
           socket.data.projectChatIds.delete(projectId);
@@ -114,10 +110,7 @@ const attachRealtimeServer = (httpServer) => {
           return;
         }
 
-        const access = await resolveProjectAccess({
-          _id: socket.data.userId,
-          role: socket.data.role,
-        }, projectId);
+        const access = await resolveProjectAccess({ _id: socket.data.userId }, projectId);
         if (!access || !access.permissions.has('write')) {
           await socket.leave(projectChatRoom(projectId));
           socket.data.projectChatIds.delete(projectId);
@@ -133,7 +126,7 @@ const attachRealtimeServer = (httpServer) => {
           messageType: 'text',
         });
         const populatedMessage = await ChatMessage.findById(message._id)
-          .populate('sender', 'fullName email role')
+          .populate('sender', 'fullName email')
           .lean();
         io.to(projectChatRoom(projectId)).emit('project:chat:message', populatedMessage);
         acknowledge(callback, { ok: true, message: populatedMessage });
@@ -156,17 +149,16 @@ const attachRealtimeServer = (httpServer) => {
 
         let hasAccess = false;
         if (meeting.project) {
-          const access = await resolveProjectAccess({
-            _id: socket.data.userId,
-            role: socket.data.role,
-          }, meeting.project);
+          const access = await resolveProjectAccess({ _id: socket.data.userId }, meeting.project);
           const isHost = meeting.host?._id?.toString() === socket.data.userId;
-          const isProjectManager = access
-            && access.project.projectManager.toString() === socket.data.userId
-            && socket.data.role === 'project_manager';
+          const isProjectManager = Boolean(access
+            && (access.project.projectManager.toString() === socket.data.userId
+              || access.membership?.role === 'project_manager'));
           const isAttendee = meeting.attendees.some((attendee) => attendee.toString() === socket.data.userId);
+          const isWorkspaceAdmin = Boolean(access && !access.membership
+            && access.permissions.has('manage'));
           hasAccess = Boolean(access && access.permissions.has('read')
-            && (isHost || isProjectManager || socket.data.role === 'admin' || isAttendee));
+            && (isHost || isProjectManager || isWorkspaceAdmin || isAttendee));
         } else if (meeting.workspace) {
           const Workspace = require('../models/Workspace');
           const workspace = await Workspace.findOne({
@@ -239,10 +231,7 @@ const attachRealtimeServer = (httpServer) => {
 
         let hasAccess = false;
         if (meeting.project) {
-          const access = await resolveProjectAccess({
-            _id: socket.data.userId,
-            role: socket.data.role,
-          }, meeting.project);
+          const access = await resolveProjectAccess({ _id: socket.data.userId }, meeting.project);
           hasAccess = Boolean(access && access.permissions.has('read'));
         } else if (meeting.workspace) {
           const Workspace = require('../models/Workspace');

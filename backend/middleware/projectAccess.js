@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const ProjectMember = require('../models/ProjectMember');
 const Workspace = require('../models/Workspace');
+const WorkspaceMember = require('../models/WorkspaceMember');
 
 const permissionNames = ['read', 'write', 'review', 'manage'];
 
@@ -38,19 +39,20 @@ const resolveProjectAccess = async (user, projectId) => {
   }).select('_id owner');
   if (!workspace) return null;
 
-  if (user.role === 'admin' && workspace.owner?.toString() === user._id.toString()) {
-    return {
-      project,
-      membership: null,
-      permissions: new Set(permissionNames),
-    };
-  }
+  const workspaceMembership = await WorkspaceMember.findOne({
+    workspace: workspace._id,
+    user: user._id,
+    isActive: true,
+  }).select('role');
+  const isWorkspaceOwner = workspace.owner?.toString() === user._id.toString();
+  if (!isWorkspaceOwner && !workspaceMembership) return null;
 
-  if (project.projectManager.toString() === user._id.toString()
-    && user.role === 'project_manager') {
+  const isWorkspaceAdmin = isWorkspaceOwner || workspaceMembership?.role === 'admin';
+  if (isWorkspaceAdmin) {
     return {
       project,
       membership: null,
+      role: 'admin',
       permissions: new Set(permissionNames),
     };
   }
@@ -59,11 +61,16 @@ const resolveProjectAccess = async (user, projectId) => {
     project: project._id,
     user: user._id,
   });
-  let membership = existingMembership?.isActive ? existingMembership : null;
+  if (existingMembership && !existingMembership.isActive) return null;
 
-  // Support older projects until their project-member records are migrated.
-  if (!existingMembership && user.role === 'developer'
-    && project.developers.some((developer) => developer.toString() === user._id.toString())) {
+  let membership = existingMembership || null;
+  if (!membership && workspaceMembership.role === 'project_manager') {
+    membership = { role: 'project_manager', accessLevel: 'admin' };
+  }
+  if (!membership && project.projectManager.toString() === user._id.toString()) {
+    membership = { role: 'project_manager', accessLevel: 'admin' };
+  }
+  if (!membership && project.developers.some((developer) => developer.toString() === user._id.toString())) {
     membership = {
       role: 'developer',
       accessLevel: 'write',
@@ -72,92 +79,122 @@ const resolveProjectAccess = async (user, projectId) => {
   if (!membership) return null;
 
   const permissions = new Set(['read']);
-  if (membership.role === 'project_manager' && user.role === 'project_manager'
-    && membership.accessLevel === 'admin') {
+  if (membership.role === 'project_manager' && membership.accessLevel === 'admin') {
     permissions.add('write');
     permissions.add('review');
     permissions.add('manage');
-  } else if (membership.role === 'developer' && user.role === 'developer'
-    && ['write', 'admin'].includes(membership.accessLevel)) {
+  } else if (membership.role === 'developer' && ['write', 'admin'].includes(membership.accessLevel)) {
     permissions.add('write');
   } else if (membership.role === 'reviewer') {
     permissions.add('review');
   }
 
-  return { project, membership, permissions };
+  return { project, membership, role: membership.role, permissions };
 };
 
 const getAccessibleProjectIds = async (user, permission = 'read') => {
   if (!permissionNames.includes(permission)) {
     throw new Error(`Unknown project permission: ${permission}`);
   }
-  const workspaceIds = await Workspace.find({
-    status: 'active',
-    $or: [{ owner: user._id }, { members: user._id }],
-  }).distinct('_id');
+  const [accessibleOwnedWorkspaceIds, memberWorkspaceIds] = await Promise.all([
+    Workspace.find({ owner: user._id, status: 'active' }).distinct('_id'),
+    WorkspaceMember.find({
+      user: user._id,
+      isActive: true,
+    }).distinct('workspace'),
+  ]);
+  const activeMembershipWorkspaceIds = memberWorkspaceIds.length
+    ? await Workspace.find({
+      _id: { $in: memberWorkspaceIds },
+      status: 'active',
+    }).distinct('_id')
+    : [];
+  const workspaceIds = [...new Set([
+    ...accessibleOwnedWorkspaceIds,
+    ...activeMembershipWorkspaceIds,
+  ].map((id) => id.toString()))];
   if (!workspaceIds.length) return [];
 
   const workspaceProjectIds = await Project.find({ workspace: { $in: workspaceIds } }).distinct('_id');
   if (!workspaceProjectIds.length) return [];
 
-  const projectIds = new Set();
-  if (user.role === 'admin') {
-    const managedWorkspaces = await Workspace.find({
-      _id: { $in: workspaceIds },
-      owner: user._id,
-    }).distinct('_id');
-    const ownedProjects = await Project.find({
-      workspace: { $in: managedWorkspaces },
-    }).distinct('_id');
-    ownedProjects.forEach((id) => projectIds.add(id.toString()));
-  }
-  if (permission === 'read') {
-    const [asManager, memberships] = await Promise.all([
-      user.role === 'project_manager'
-        ? Project.find({ projectManager: user._id, workspace: { $in: workspaceIds } }).distinct('_id')
-        : [],
-      ProjectMember.find({
-        user: user._id,
-        isActive: true,
-        project: { $in: workspaceProjectIds },
-      }).distinct('project'),
-    ]);
-    [...asManager, ...memberships].forEach((id) => projectIds.add(id.toString()));
-    if (user.role === 'developer') {
-      const projectsWithMembershipRecords = await ProjectMember.find({
-        user: user._id,
-        project: { $in: workspaceProjectIds },
-      }).distinct('project');
-      const legacyProjects = await Project.find({
-        workspace: { $in: workspaceIds },
-        developers: user._id,
-        _id: {
-          $in: workspaceProjectIds,
-          $nin: [...projectIds, ...projectsWithMembershipRecords],
-        },
-      }).distinct('_id');
-      legacyProjects.forEach((id) => projectIds.add(id.toString()));
-    }
-  } else {
-    const memberships = await ProjectMember.find({
+  const [ownedWorkspaceIds, adminMembershipWorkspaceIds, managerMembershipWorkspaceIds, managedProjectIds, memberships] = await Promise.all([
+    Workspace.find({ _id: { $in: workspaceIds }, owner: user._id }).distinct('_id'),
+    WorkspaceMember.find({
+      workspace: { $in: workspaceIds },
       user: user._id,
+      role: 'admin',
       isActive: true,
+    }).distinct('workspace'),
+    WorkspaceMember.find({
+      workspace: { $in: workspaceIds },
+      user: user._id,
+      role: 'project_manager',
+      isActive: true,
+    }).distinct('workspace'),
+    Project.find({
+      projectManager: user._id,
+      workspace: { $in: workspaceIds },
+    }).distinct('_id'),
+    ProjectMember.find({
+      user: user._id,
       project: { $in: workspaceProjectIds },
-    }).select('project role accessLevel');
-    for (const membership of memberships) {
-      const access = await resolveProjectAccess(user, membership.project);
-      if (access && access.permissions.has(permission)) projectIds.add(membership.project.toString());
-    }
-    if (user.role === 'project_manager' && ['write', 'review', 'manage'].includes(permission)) {
-      const managed = await Project.find({
-        projectManager: user._id,
-        workspace: { $in: workspaceIds },
-      }).distinct('_id');
-      managed.forEach((id) => projectIds.add(id.toString()));
-    }
+    }).select('project role accessLevel isActive'),
+  ]);
+
+  const adminWorkspaceIds = new Set([
+    ...ownedWorkspaceIds,
+    ...adminMembershipWorkspaceIds,
+  ].map((id) => id.toString()));
+  const adminProjectIds = adminWorkspaceIds.size
+    ? await Project.find({
+      workspace: { $in: [...adminWorkspaceIds] },
+    }).distinct('_id')
+    : [];
+  const membershipProjectIds = new Set(
+    memberships.map((membership) => membership.project.toString())
+  );
+  const managerProjectCandidates = managerMembershipWorkspaceIds.length
+    ? await Project.find({
+      workspace: { $in: managerMembershipWorkspaceIds },
+    }).distinct('_id')
+    : [];
+  const managerProjectIds = managerProjectCandidates.filter(
+    (id) => !membershipProjectIds.has(id.toString())
+  );
+  const unscopedManagerProjectIds = managedProjectIds.filter(
+    (id) => !membershipProjectIds.has(id.toString())
+  );
+  const accessibleIds = new Set([
+    ...adminProjectIds,
+    ...managerProjectIds,
+    ...unscopedManagerProjectIds,
+  ].map((id) => id.toString()));
+
+  for (const membership of memberships) {
+    if (!membership.isActive) continue;
+
+    const hasPermission = permission === 'read'
+      || (membership.role === 'project_manager' && membership.accessLevel === 'admin')
+      || (permission === 'write' && membership.role === 'developer'
+        && ['write', 'admin'].includes(membership.accessLevel))
+      || (permission === 'review' && membership.role === 'reviewer');
+    if (hasPermission) accessibleIds.add(membership.project.toString());
   }
 
-  return [...projectIds].map((id) => new mongoose.Types.ObjectId(id));
+  if (permission === 'read') {
+    const legacyDeveloperProjectIds = await Project.find({
+      workspace: { $in: workspaceIds },
+      developers: user._id,
+      _id: {
+        $in: workspaceProjectIds,
+        $nin: [...membershipProjectIds],
+      },
+    }).distinct('_id');
+    legacyDeveloperProjectIds.forEach((id) => accessibleIds.add(id.toString()));
+  }
+
+  return [...accessibleIds].map((id) => new mongoose.Types.ObjectId(id));
 };
 
 const requireProjectAccess = (permission = 'read') => async (req, res, next) => {
@@ -217,10 +254,35 @@ const requireTaskProjectAccess = (permission = 'read') => async (req, res, next)
   }
 };
 
+const requireProjectRoles = (...allowedRoles) => async (req, res, next) => {
+  try {
+    const access = await resolveProjectAccess(req.user, req.project?._id || getProjectId(req));
+    if (!access) {
+      return res.status(404).json({ message: 'Project not found or you do not have access to it.' });
+    }
+
+    if (!allowedRoles.includes(access.role)) {
+      return res.status(403).json({
+        message: `Access denied. Required project role: ${allowedRoles.join(' or ')}.`,
+      });
+    }
+    req.project = access.project;
+    req.projectMembership = access.membership;
+    req.projectPermissions = access.permissions;
+    return next();
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Project role could not be verified.',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getProjectId,
   resolveProjectAccess,
   getAccessibleProjectIds,
   requireProjectAccess,
   requireTaskProjectAccess,
+  requireProjectRoles,
 };

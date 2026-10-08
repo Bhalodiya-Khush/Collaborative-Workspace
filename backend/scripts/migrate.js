@@ -4,15 +4,22 @@ const mongoose = require('mongoose');
 const connectDB = require('../config/db');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
+const WorkspaceMember = require('../models/WorkspaceMember');
 const Project = require('../models/Project');
 const ProjectMember = require('../models/ProjectMember');
 const ActivityLog = require('../models/ActivityLog');
+
+const getLegacyWorkspaceRole = (legacyRole, defaultRole) => {
+  if (['project_manager', 'developer', 'viewer'].includes(legacyRole)) return legacyRole;
+  return ['developer', 'viewer'].includes(defaultRole) ? defaultRole : 'developer';
+};
 
 const migrate = async () => {
   try {
     await connectDB();
 
-    const users = await User.find();
+    const legacyUsers = await User.collection.find({}, { projection: { _id: 1, role: 1 } }).toArray();
+    const legacyRoleByUser = new Map(legacyUsers.map((user) => [user._id.toString(), user.role]));
     const workspaces = await Workspace.find();
     const projects = await Project.find();
 
@@ -28,6 +35,24 @@ const migrate = async () => {
         { _id: { $in: memberIds } },
         { $addToSet: { workspaceIds: workspace._id } }
       );
+      for (const userId of memberIds) {
+        const existingMembership = await WorkspaceMember.findOne({
+          workspace: workspace._id,
+          user: userId,
+        });
+        const role = userId === workspace.owner.toString()
+          ? 'admin'
+          : existingMembership?.role
+            || getLegacyWorkspaceRole(
+              legacyRoleByUser.get(userId),
+              workspace.settings?.defaultRole
+            );
+        await WorkspaceMember.findOneAndUpdate(
+          { workspace: workspace._id, user: userId },
+          { workspace: workspace._id, user: userId, role, isActive: true },
+          { upsert: true, runValidators: true }
+        );
+      }
     }
 
     for (const project of projects) {
@@ -53,6 +78,19 @@ const migrate = async () => {
           { _id: { $in: missingMembers } },
           { $addToSet: { workspaceIds: workspace._id } }
         );
+        for (const userId of missingMembers) {
+          const legacyRole = legacyRoleByUser.get(userId);
+          await WorkspaceMember.findOneAndUpdate(
+            { workspace: workspace._id, user: userId },
+            {
+              workspace: workspace._id,
+              user: userId,
+              role: getLegacyWorkspaceRole(legacyRole, workspace.settings?.defaultRole),
+              isActive: true,
+            },
+            { upsert: true, runValidators: true }
+          );
+        }
       }
 
       await User.updateMany(
@@ -60,30 +98,42 @@ const migrate = async () => {
         { $addToSet: { projectIds: project._id } }
       );
 
-      await ProjectMember.findOneAndUpdate(
-        { project: project._id, user: project.projectManager },
-        {
+      const existingManagerMembership = await ProjectMember.findOne({
+        project: project._id,
+        user: project.projectManager,
+      });
+      if (existingManagerMembership) {
+        existingManagerMembership.role = 'project_manager';
+        existingManagerMembership.accessLevel = 'admin';
+        existingManagerMembership.isActive = true;
+        await existingManagerMembership.save();
+      } else {
+        await ProjectMember.create({
           project: project._id,
           user: project.projectManager,
           role: 'project_manager',
           accessLevel: 'admin',
           isActive: true,
-        },
-        { upsert: true, new: true, runValidators: true }
-      );
+        });
+      }
 
       for (const developer of project.developers) {
-        await ProjectMember.findOneAndUpdate(
-          { project: project._id, user: developer },
-          {
+        const existingDeveloperMembership = await ProjectMember.findOne({
+          project: project._id,
+          user: developer,
+        });
+        if (existingDeveloperMembership) {
+          existingDeveloperMembership.isActive = true;
+          await existingDeveloperMembership.save();
+        } else {
+          await ProjectMember.create({
             project: project._id,
             user: developer,
             role: 'developer',
             accessLevel: 'write',
             isActive: true,
-          },
-          { upsert: true, new: true, runValidators: true }
-        );
+          });
+        }
       }
 
       const existingActivity = await ActivityLog.findOne({
@@ -103,7 +153,9 @@ const migrate = async () => {
       }
     }
 
-    console.log(`Migration completed: ${users.length} users, ${workspaces.length} workspaces, ${projects.length} projects checked.`);
+    await User.collection.updateMany({}, { $unset: { role: '' } });
+
+    console.log(`Migration completed: ${legacyUsers.length} users, ${workspaces.length} workspaces, ${projects.length} projects checked.`);
     await mongoose.disconnect();
     process.exit(0);
   } catch (error) {

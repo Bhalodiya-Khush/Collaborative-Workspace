@@ -1,10 +1,21 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 
-function ProtectedRoute({ allowedRoles }) {
-  const { isAuthenticated, loading, user } = useAuth();
+function ProtectedRoute({ allowedRoles, allowedProjectRoles }) {
+  const { isAuthenticated, loading } = useAuth();
+  const {
+    workspaceRole,
+    projectRoles,
+    loading: workspaceLoading,
+    projectsLoading,
+  } = useWorkspace();
 
-  if (loading) {
+  if (
+    loading
+    || ((allowedRoles || allowedProjectRoles) && workspaceLoading)
+    || (allowedProjectRoles && projectsLoading)
+  ) {
     return <p>Loading...</p>;
   }
 
@@ -12,7 +23,10 @@ function ProtectedRoute({ allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+  const hasAllowedWorkspaceRole = allowedRoles?.includes(workspaceRole);
+  const hasAllowedProjectRole = allowedProjectRoles
+    && projectRoles.some((role) => allowedProjectRoles.includes(role));
+  if ((allowedRoles || allowedProjectRoles) && !hasAllowedWorkspaceRole && !hasAllowedProjectRole) {
     return <Navigate to="/dashboard" replace />;
   }
 

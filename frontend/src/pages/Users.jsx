@@ -7,10 +7,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Users() {
   const { user: currentUser } = useAuth();
+  const { selectedWorkspaceId, workspaceRole } = useWorkspace();
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -19,16 +21,27 @@ function Users() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/users')
-      .then((response) => setUsers(response.data || []))
-      .catch((requestError) => setError(requestError.response?.data?.message || 'Users could not be loaded.'))
-      .finally(() => setLoading(false));
-  }, []);
+    queueMicrotask(() => {
+      if (!selectedWorkspaceId) {
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      api.get(`/workspaces/${selectedWorkspaceId}/members`)
+        .then((response) => setUsers(response.data || []))
+        .catch((requestError) => setError(requestError.response?.data?.message || 'Users could not be loaded.'))
+        .finally(() => setLoading(false));
+    });
+  }, [selectedWorkspaceId]);
 
   const updateRole = async (accountId, role) => {
     setError('');
     try {
-      const response = await api.patch(`/users/${accountId}/role`, { role });
+      const response = await api.patch(`/workspaces/${selectedWorkspaceId}/role`, {
+        userId: accountId,
+        role,
+      });
       setUsers((current) => current.map((account) => account._id === accountId ? response.data.user : account));
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'User role could not be updated.');
@@ -59,6 +72,7 @@ function Users() {
       </div>
 
       {error && <p className="auth-error" role="alert">{error}</p>}
+      {!selectedWorkspaceId && <p className="empty-state">Select a workspace to manage its members.</p>}
 
       {/* STATISTICS */}
 
@@ -221,7 +235,7 @@ function Users() {
 
               {/* ACTION */}
 
-              {currentUser?.role === 'admin' && currentUser._id !== user._id ? (
+              {workspaceRole === 'admin' && currentUser?._id !== user._id ? (
                 <select className="users-filter" value={user.role} onChange={(event) => updateRole(user._id, event.target.value)} aria-label={`Role for ${user.fullName}`}>
                   <option value="admin">Admin</option>
                   <option value="project_manager">Project Manager</option>

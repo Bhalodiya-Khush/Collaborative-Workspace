@@ -1,23 +1,22 @@
 import {
   Plus,
-  MoreHorizontal,
   CalendarDays,
   Flag,
   CheckCircle2,
   FolderKanban,
   FileCode,
-  AlertCircle,
   Clock,
-  ShieldCheck,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Tasks() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { selectedWorkspaceId } = useWorkspace();
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -34,24 +33,28 @@ function Tasks() {
     { title: 'Blocked', status: 'blocked' },
   ];
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
       const [tasksResponse, projectsResponse] = await Promise.all([
         api.get('/tasks'),
         api.get('/projects'),
       ]);
-      setTasks(tasksResponse.data || []);
-      setProjects(projectsResponse.data || []);
+      setTasks(selectedWorkspaceId
+        ? (tasksResponse.data || []).filter((task) => String(task.workspace?._id || task.workspace) === selectedWorkspaceId)
+        : tasksResponse.data || []);
+      setProjects(selectedWorkspaceId
+        ? (projectsResponse.data || []).filter((project) => String(project.workspace?._id || project.workspace) === selectedWorkspaceId)
+        : projectsResponse.data || []);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Tasks could not be loaded.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+    queueMicrotask(loadTasks);
+  }, [loadTasks]);
 
   const updateStatus = async (taskId, newStatus) => {
     setError('');
@@ -105,11 +108,10 @@ function Tasks() {
 
   // Active project details for progress display
   const activeProject = projects.find((p) => p._id === selectedProjectId) || (projects.length === 1 ? projects[0] : null);
-
-  const today = new Date().toDateString();
-  const dueToday = displayedTasks.filter(
-    (task) => task.dueDate && new Date(task.dueDate).toDateString() === today && task.status !== 'completed'
-  ).length;
+  const activeProjectRole = activeProject?.currentUserRole;
+  const canManageAnyProject = projects.some((project) => (
+    ['admin', 'project_manager'].includes(project.currentUserRole)
+  ));
 
   const projectDevelopers = projects.find((p) => p._id === (selectedProjectId || projects[0]?._id))?.developers || [];
 
@@ -120,13 +122,13 @@ function Tasks() {
         <div>
           <h1>Project Tasks & Deliverables</h1>
           <p>
-            {user?.role === 'developer'
+            {activeProjectRole === 'developer'
               ? 'View tasks within your assigned projects. Submit work for Project Manager approval.'
               : 'Organize, assign and track development work across your projects.'}
           </p>
         </div>
 
-        {['admin', 'project_manager'].includes(user?.role) && (
+        {canManageAnyProject && (
           <button className="primary-button" onClick={() => setShowForm((visible) => !visible)}>
             <Plus size={17} /> Create Task
           </button>
@@ -148,7 +150,7 @@ function Tasks() {
               style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d7dfd6', background: '#fbfaf6', color: '#202a26', fontSize: '13px', minWidth: '220px' }}
             >
               <option value="">All My Projects ({projects.length})</option>
-              {projects.map((proj) => (
+              {projects.filter((project) => ['admin', 'project_manager'].includes(project.currentUserRole)).map((proj) => (
                 <option key={proj._id} value={proj._id}>{proj.name}</option>
               ))}
             </select>
@@ -280,8 +282,12 @@ function Tasks() {
                 <div className="kanban-tasks">
                   {columnTasks.map((task) => {
                     const isAssignee = task.assignee?._id === user?._id || task.assignee === user?._id;
+                    const projectRole = projects.find(
+                      (project) => project._id === (task.project?._id || task.project)
+                    )?.currentUserRole;
+                    const isProjectManager = ['admin', 'project_manager'].includes(projectRole);
                     const canEditStatus =
-                      ['admin', 'project_manager'].includes(user?.role) || isAssignee;
+                      isProjectManager || isAssignee;
 
                     return (
                       <div className="task-card" key={task._id}>
@@ -353,7 +359,7 @@ function Tasks() {
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <Clock size={13} /> Awaiting PM Review
                             </span>
-                            {['admin', 'project_manager'].includes(user?.role) && (
+                            {isProjectManager && (
                               <button
                                 onClick={() => navigate('/submissions')}
                                 style={{ background: '#d9764e', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', cursor: 'pointer' }}
@@ -374,14 +380,14 @@ function Tasks() {
                               <option value="todo">To Do</option>
                               <option value="in_progress">In Progress</option>
                               <option value="in_review">In Review (Submit Code)</option>
-                              {user?.role !== 'developer' && <option value="completed">Completed (Approved)</option>}
+                              {projectRole !== 'developer' && <option value="completed">Completed (Approved)</option>}
                               <option value="blocked">Blocked</option>
                             </select>
                           </div>
                         ) : null}
 
                         {/* SUBMIT CODE SHORTCUT FOR DEVELOPERS */}
-                        {user?.role === 'developer' && isAssignee && task.status !== 'completed' && (
+                        {projectRole === 'developer' && isAssignee && task.status !== 'completed' && (
                           <button
                             onClick={() => navigate('/submissions')}
                             style={{

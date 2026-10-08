@@ -17,7 +17,10 @@ function Reports() {
     const loadReports = async () => {
       try {
         const response = await api.get('/projects');
-        const projectReports = await Promise.all((response.data || []).map(async (project) => {
+        const reportableProjects = (response.data || []).filter((project) => (
+          ['admin', 'project_manager'].includes(project.currentUserRole)
+        ));
+        const projectReports = await Promise.all(reportableProjects.map(async (project) => {
           const reportResponse = await api.get(`/projects/${project._id}/report`);
           return { project, ...reportResponse.data };
         }));

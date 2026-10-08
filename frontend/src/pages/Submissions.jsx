@@ -9,10 +9,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Submissions() {
   const { user } = useAuth();
+  const { selectedWorkspaceId } = useWorkspace();
   const [submissions, setSubmissions] = useState([]);
   const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -28,9 +30,18 @@ function Submissions() {
       const [submissionResponse, projectResponse, taskResponse] = await Promise.all([
         api.get('/submissions'), api.get('/projects'), api.get('/tasks'),
       ]);
-      setSubmissions(submissionResponse.data || []);
-      setProjects(projectResponse.data || []);
-      setTasks(taskResponse.data || []);
+      const accessibleProjects = projectResponse.data || [];
+      const visibleProjects = selectedWorkspaceId
+        ? accessibleProjects.filter((project) => String(project.workspace?._id || project.workspace) === selectedWorkspaceId)
+        : accessibleProjects;
+      const visibleProjectIds = new Set(visibleProjects.map((project) => project._id));
+      setSubmissions((submissionResponse.data || []).filter(
+        (submission) => visibleProjectIds.has(submission.project?._id || submission.project)
+      ));
+      setProjects(visibleProjects);
+      setTasks((taskResponse.data || []).filter((task) => (
+        visibleProjectIds.has(task.project?._id || task.project)
+      )));
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Submissions could not be loaded.');
     } finally {
@@ -41,13 +52,22 @@ function Submissions() {
   useEffect(() => {
     Promise.all([api.get('/submissions'), api.get('/projects'), api.get('/tasks')])
       .then(([submissionResponse, projectResponse, taskResponse]) => {
-        setSubmissions(submissionResponse.data || []);
-        setProjects(projectResponse.data || []);
-        setTasks(taskResponse.data || []);
+        const accessibleProjects = projectResponse.data || [];
+        const visibleProjects = selectedWorkspaceId
+          ? accessibleProjects.filter((project) => String(project.workspace?._id || project.workspace) === selectedWorkspaceId)
+          : accessibleProjects;
+        const visibleProjectIds = new Set(visibleProjects.map((project) => project._id));
+        setSubmissions((submissionResponse.data || []).filter(
+          (submission) => visibleProjectIds.has(submission.project?._id || submission.project)
+        ));
+        setProjects(visibleProjects);
+        setTasks((taskResponse.data || []).filter((task) => (
+          visibleProjectIds.has(task.project?._id || task.project)
+        )));
       })
       .catch((requestError) => setError(requestError.response?.data?.message || 'Submissions could not be loaded.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedWorkspaceId]);
 
   const createSubmission = async (event) => {
     event.preventDefault();
@@ -91,6 +111,7 @@ function Submissions() {
     const text = `${submission.title} ${submission.project?.name || ''} ${submission.developer?.fullName || ''}`.toLowerCase();
     return text.includes(search.toLowerCase()) && (statusFilter === 'all' || submission.reviewStatus === statusFilter);
   });
+  const canSubmitToAnyProject = projects.some((project) => project.currentUserRole === 'developer');
 
   const getStatusIcon = (status) => {
     if (status === 'Approved') {
@@ -112,13 +133,13 @@ function Submissions() {
           <p>Review and manage project submissions.</p>
         </div>
 
-        {user?.role === 'developer' && <button className="primary-button" onClick={() => setShowForm((visible) => !visible)}><Plus size={17} />New Submission</button>}
+        {canSubmitToAnyProject && <button className="primary-button" onClick={() => setShowForm((visible) => !visible)}><Plus size={17} />New Submission</button>}
       </div>
 
       {error && <p className="auth-error" role="alert">{error}</p>}
       {showForm && <form className="entity-form" onSubmit={createSubmission}>
         <h3>Submit completed work</h3>
-        <label>Project<select name="project" required value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Select project</option>{projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}</select></label>
+        <label>Project<select name="project" required value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Select project</option>{projects.filter((project) => project.currentUserRole === 'developer').map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}</select></label>
         <label>Task<select name="task" required><option value="">Select task assigned to you</option>{tasks.filter((task) => (task.project?._id || task.project) === projectId && (task.assignee?._id || task.assignee) === user?._id).map((task) => <option key={task._id} value={task._id}>{task.title}</option>)}</select></label>
         <label>Title<input name="title" required maxLength={160} /></label>
         <label>Description<textarea name="description" rows="3" /></label>
@@ -236,7 +257,9 @@ function Submissions() {
 
               <div className="submission-actions">
                 {(submission.files || []).map((file, index) => <button type="button" key={file.fileName} title={`Download ${file.fileName}`} onClick={() => downloadFile(submission, index)}><Download size={16} /></button>)}
-                {['admin', 'project_manager'].includes(user?.role) && submission.reviewStatus === 'pending' && <>
+                {['admin', 'project_manager'].includes(
+                  projects.find((project) => project._id === (submission.project?._id || submission.project))?.currentUserRole
+                ) && submission.reviewStatus === 'pending' && <>
                   <button type="button" title="Approve" onClick={() => reviewSubmission(submission._id, 'approved')}><CheckCircle2 size={16} /></button>
                   <button type="button" title="Request changes" onClick={() => reviewSubmission(submission._id, 'changes_requested')}><AlertCircle size={16} /></button>
                 </>}

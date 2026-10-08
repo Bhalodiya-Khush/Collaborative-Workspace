@@ -22,7 +22,6 @@ The database is built with Mongoose and includes these collections:
   - fullName
   - email
   - password
-  - role
   - skills
   - workspaceIds
   - projectIds
@@ -49,6 +48,11 @@ The database is built with Mongoose and includes these collections:
   - user
   - role
   - accessLevel
+  - isActive
+- WorkspaceMember
+  - workspace
+  - user
+  - role
   - isActive
 - Task
   - title
@@ -156,7 +160,7 @@ After successful login, the browser stores the JWT and opens:
 GET /dashboard
 ```
 
-The dashboard is selected by authenticated role (`admin`, `project_manager`, `developer`, or `viewer`). Browser routes are handled by `routes/pageRoutes.js`; `middleware/pageAuth.js` verifies the HttpOnly login cookie and `controllers/pageController.js` renders EJS templates from `views/`. Page behavior is in `public/js/page-app.js`. Navigation and forms are rendered only for relevant roles; API authorization remains authoritative. Dashboard and feature data comes from the signed-in user's accessible records, not hard-coded demonstration rows.
+The common dashboard lists the signed-in user's accessible workspaces and projects. After selecting a workspace, frontend role-based navigation and functionality use that workspace's contextual membership role. Backend API authorization independently verifies active workspace and project memberships; frontend state is never trusted for access control.
 
 Additional EJS pages are available after login:
 
@@ -304,7 +308,7 @@ The `/pages` route links to the browser views. API routes remain separate under 
 - GET /api/notifications
 - POST /api/seed (development only; admin JWT required)
 
-The dashboard counts are available to signed-in users. The API seed endpoint is hidden unless `NODE_ENV=development`, requires an admin token, and never returns user password fields. Do not enable development mode in production.
+The dashboard counts are available to signed-in users. The API seed endpoint is hidden unless `NODE_ENV=development`, requires workspace administrator access, and never returns user password fields. Do not enable development mode in production.
 
 ## JWT authentication
 
@@ -314,8 +318,7 @@ Login with `POST /api/users/login` using an email and password. The response con
 {
   "token": "your.jwt.token",
   "user": {
-    "email": "admin@workspace.com",
-    "role": "admin"
+    "email": "admin@workspace.com"
   }
 }
 ```
@@ -328,18 +331,15 @@ Authorization: Bearer your.jwt.token
 
 The EJS UI uses an HttpOnly, SameSite cookie for protected page, API, and real-time requests; it does not keep the JWT in browser local storage. The JWT expires according to `JWT_EXPIRES_IN` in `.env` (one day by default). API clients may continue to use a bearer token.
 
-Protected API and page middleware reload the active account from MongoDB and place it on `req.user`; controllers use this trusted server-side identity for owners, task reporters, submission developers, meeting hosts, message senders, and activity actors. Clients must not send or override those actor IDs. Request-supplied IDs identify target resources or recipients only, and are checked against the signed-in user's project/workspace access. Workspace creation always assigns its owner from the authenticated administrator.
+Protected API middleware reloads the active account from MongoDB and places it on `req.user`; controllers use this trusted server-side identity for owners, task reporters, submission developers, meeting hosts, message senders, and activity actors. Clients must not send or override those actor IDs. Request-supplied IDs identify target resources or recipients only, and are checked against the signed-in user's project/workspace access. Workspace creation always assigns its owner from the authenticated account.
 
-## Role-based authorization
+## Contextual role-based authorization
 
-Public registration always creates a `developer` account. This prevents users from granting themselves admin or project manager privileges.
+Public registration creates a normal user account and does not assign a global role. Creating a workspace records the creator as its owner and as an `admin` in that workspace's `WorkspaceMember` record. Workspace roles (`admin`, `project_manager`, `developer`, and `viewer`) are stored per workspace. Project roles (`project_manager`, `developer`, `reviewer`, and `guest`) and access levels are stored per project in `ProjectMember`.
 
-- `admin`: workspace administrator for workspaces they own; create projects, manage workspace members, and create notifications only for those workspace teams
-- `project_manager`: view users, create tasks, schedule meetings, and create notifications
-- `developer`: view assigned data, submit code, schedule meetings, and send messages
-- `viewer`: read-only access to project data only after explicit project membership; viewers must be added as read-only guests
+The same account can have different roles in different workspaces and projects. Workspace and project authorization is resolved from the requested resource's owner and membership records; changing one membership does not change the account or other memberships. Project assignment and project-member records determine project access. Task assignees must be active project developers, developers can update only their own assigned tasks, and project managers or workspace administrators can review submissions when their project permissions allow it.
 
-Workspace administrators can create multiple workspaces, but cannot access workspace or project data they do not own. Project managers can add, remove, and update project members on their assigned projects. Task assignees must be active developers in the project, developers can update only their own assigned tasks, and project managers/admins can review submissions.
+Run `npm run migrate` once after upgrading. It backfills workspace-member records from existing memberships, preserves existing membership roles, derives missing non-admin roles from the former user role where possible, treats workspace owners as admins, and removes the legacy global `User.role` field. A legacy global admin is not promoted to admin in every workspace; non-owner memberships use that workspace's default role to avoid broadening access. Because historical global roles did not record different intended roles per workspace, review migrated workspace role assignments before relying on them.
 
 ## Code and ZIP uploads
 

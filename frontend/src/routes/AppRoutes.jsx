@@ -83,16 +83,24 @@ function AppRoutes() {
 
           <Route element={<ProtectedRoute allowedRoles={['admin', 'project_manager']} />}>
             <Route
+              path="/users"
+              element={<Users />}
+            />
+          </Route>
+
+          <Route element={(
+            <ProtectedRoute
+              allowedRoles={['admin', 'project_manager']}
+              allowedProjectRoles={['admin', 'project_manager']}
+            />
+          )}>
+            <Route
               path="/monitoring"
               element={<Monitoring />}
             />
             <Route
               path="/reports"
               element={<Reports />}
-            />
-            <Route
-              path="/users"
-              element={<Users />}
             />
           </Route>
 

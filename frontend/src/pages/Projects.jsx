@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
@@ -6,15 +6,14 @@ import {
   Plus,
   Users,
   X,
-  UserCheck,
   Shield,
   Search,
 } from 'lucide-react';
-import { useAuth } from '../context/useAuth';
+import { useWorkspace } from '../context/useWorkspace';
 import api from '../services/api';
 
 function Projects() {
-  const { user } = useAuth();
+  const { selectedWorkspaceId, workspaceRole } = useWorkspace();
   const [projects, setProjects] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
   const [users, setUsers] = useState([]);
@@ -25,30 +24,37 @@ function Projects() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     try {
       const [projectsResponse, workspacesResponse] = await Promise.all([
         api.get('/projects'),
         api.get('/workspaces'),
       ]);
-      setProjects(projectsResponse.data || []);
+      const accessibleProjects = projectsResponse.data || [];
+      setProjects(selectedWorkspaceId
+        ? accessibleProjects.filter((project) => String(project.workspace?._id || project.workspace) === selectedWorkspaceId)
+        : accessibleProjects);
       setWorkspaces(workspacesResponse.data || []);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Projects could not be loaded.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    queueMicrotask(loadProjects);
+  }, [loadProjects]);
 
   const openForm = async () => {
     setError('');
     setSuccess('');
     try {
-      const response = await api.get('/users');
+      if (!selectedWorkspaceId) {
+        setError('Select a workspace before creating a project.');
+        return;
+      }
+      const response = await api.get(`/workspaces/${selectedWorkspaceId}/members`);
       setUsers(response.data || []);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Team members could not be loaded.');
@@ -95,13 +101,13 @@ function Projects() {
         <div>
           <h1>Projects</h1>
           <p>
-            {user?.role === 'developer'
+            {workspaceRole === 'developer'
               ? 'Projects where you are assigned as developer. Track progress and deliverables.'
               : 'Create, organize and oversee projects within your workspaces.'}
           </p>
         </div>
 
-        {user?.role === 'admin' && (
+        {workspaceRole === 'admin' && (
           <button className="primary-button" onClick={openForm}>
             <Plus size={17} /> Create Project
           </button>
@@ -152,28 +158,26 @@ function Projects() {
           </label>
 
           <label>Workspace
-            <select name="workspace" required defaultValue="">
+            <select name="workspace" required defaultValue={selectedWorkspaceId}>
               <option value="" disabled>Select workspace</option>
-              {workspaces.map((workspace) => (
+              {workspaces.filter((workspace) => workspace._id === selectedWorkspaceId).map((workspace) => (
                 <option key={workspace._id} value={workspace._id}>{workspace.name}</option>
               ))}
             </select>
           </label>
 
-          {user?.role === 'admin' && (
-            <label>Project Manager
-              <select name="projectManager" required defaultValue="">
-                <option value="" disabled>Select Project Manager</option>
-                {users
-                  .filter((account) => account.role === 'project_manager')
-                  .map((account) => (
-                    <option key={account._id} value={account._id}>
-                      {account.fullName} ({account.email})
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
+          <label>Project Manager
+            <select name="projectManager" required defaultValue="">
+              <option value="" disabled>Select Project Manager</option>
+              {users
+                .filter((account) => account.role === 'project_manager')
+                .map((account) => (
+                  <option key={account._id} value={account._id}>
+                    {account.fullName} ({account.email})
+                  </option>
+                ))}
+            </select>
+          </label>
 
           <label>Developers (Hold Ctrl/Cmd to select multiple)
             <select name="developers" multiple size="4">
@@ -225,6 +229,9 @@ function Projects() {
               </div>
 
               <h3>{project.name}</h3>
+              <p className="project-description">
+                Your project role: <strong>{project.currentUserRole?.replace('_', ' ') || 'Member'}</strong>
+              </p>
 
               <p className="project-description">
                 {project.description || 'No description provided.'}
