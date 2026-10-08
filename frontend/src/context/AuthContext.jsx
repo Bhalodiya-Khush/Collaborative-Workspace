@@ -6,26 +6,26 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(() => Boolean(localStorage.getItem('token')));
 
+  const loadUser = async () => {
+    try {
+      const response = await api.get('/users/me');
+      setUser(response.data.user);
+      return response.data.user;
+    } catch (error) {
+      console.error('Failed to restore session:', error);
+      localStorage.removeItem('token');
+      setUser(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('token');
-
     if (!token) {
       return;
     }
-
-    const loadUser = async () => {
-      try {
-        const response = await api.get('/users/me');
-        setUser(response.data.user);
-      } catch (error) {
-        console.error('Failed to restore session:', error);
-        localStorage.removeItem('token');
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadUser();
   }, []);
 
@@ -35,12 +35,12 @@ export function AuthProvider({ children }) {
       password,
     });
 
-    const { token, user } = response.data;
+    const { token, user: loggedInUser } = response.data;
 
     localStorage.setItem('token', token);
-    setUser(user);
+    setUser(loggedInUser);
 
-    return user;
+    return loggedInUser;
   };
 
   const logout = () => {
@@ -48,11 +48,17 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = (updatedUser) => {
+    setUser((prev) => (prev ? { ...prev, ...updatedUser } : updatedUser));
+  };
+
   const value = {
     user,
     loading,
     login,
     logout,
+    updateUser,
+    refreshUser: loadUser,
     isAuthenticated: !!user,
   };
 
@@ -62,4 +68,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-

@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['admin', 'project_manager', 'developer'],
+      enum: ['admin', 'project_manager', 'developer', 'viewer'],
       default: 'developer',
     },
     profileImage: {
@@ -34,6 +34,10 @@ const userSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
     workspaceIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' }],
     projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],

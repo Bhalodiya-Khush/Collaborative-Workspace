@@ -12,7 +12,6 @@ const migrate = async () => {
   try {
     await connectDB();
 
-    await User.updateMany({ role: 'viewer' }, { $set: { role: 'developer' } });
     const users = await User.find();
     const workspaces = await Workspace.find();
     const projects = await Project.find();

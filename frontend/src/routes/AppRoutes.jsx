@@ -12,6 +12,7 @@ import Messages from '../pages/Messages';
 import Notifications from '../pages/Notifications';
 import Monitoring from '../pages/Monitoring';
 import Reports from '../pages/Reports';
+import Profile from '../pages/Profile';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
 import ProtectedRoute from './ProtectedRoute';
@@ -71,16 +72,24 @@ function AppRoutes() {
           />
 
           <Route
-            path="/monitoring"
-            element={<Monitoring />}
+            path="/profile"
+            element={<Profile />}
           />
 
           <Route
-            path="/reports"
-            element={<Reports />}
+            path="/settings"
+            element={<Profile />}
           />
 
           <Route element={<ProtectedRoute allowedRoles={['admin', 'project_manager']} />}>
+            <Route
+              path="/monitoring"
+              element={<Monitoring />}
+            />
+            <Route
+              path="/reports"
+              element={<Reports />}
+            />
             <Route
               path="/users"
               element={<Users />}
@@ -90,6 +99,7 @@ function AppRoutes() {
         </Route>
       </Route>
 
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

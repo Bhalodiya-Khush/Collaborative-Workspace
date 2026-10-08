@@ -73,11 +73,13 @@ function Submissions() {
 
   const downloadFile = async (submission, index) => {
     try {
-      const response = await api.get(`/submissions/${submission._id}/files/${index}`, { responseType: 'blob' });
+      const file = submission.files[index];
+      const targetUrl = file.downloadUrl || `/api/files/${encodeURIComponent(file.fileName)}`;
+      const response = await api.get(targetUrl, { responseType: 'blob' });
       const url = URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url;
-      link.download = submission.files[index].fileName;
+      link.download = file.fileName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (requestError) {

@@ -39,7 +39,15 @@ function Navbar() {
           {unreadCount > 0 && <span className="notification-dot"></span>}
         </button>
 
-        <div className="user-info">
+        <div
+          className="user-info"
+          onClick={() => navigate('/profile')}
+          title="View profile & settings"
+          style={{ cursor: 'pointer' }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter') navigate('/profile'); }}
+        >
           <UserCircle size={34} />
 
           <div>

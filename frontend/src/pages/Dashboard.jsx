@@ -50,7 +50,7 @@ function Dashboard() {
 
   const role = user?.role;
   const statCards = useMemo(() => {
-    const stats = dashboard?.stats || {};
+    const stats = dashboard?.stats || dashboard || {};
     if (role === 'admin') {
       return [
         { title: 'Total Users', value: stats.totalUsers ?? 0, icon: Users, link: '/users' },
@@ -75,7 +75,7 @@ function Dashboard() {
       { title: 'Pending Tasks', value: stats.pendingTasks ?? 0, icon: Clock3, link: '/tasks' },
       { title: 'My Submissions', value: stats.mySubmissions ?? 0, icon: FileCheck2, link: '/submissions' },
     ];
-  }, [role, dashboard?.stats]);
+  }, [role, dashboard]);
 
   const title = role === 'admin'
     ? 'Admin Control Center'

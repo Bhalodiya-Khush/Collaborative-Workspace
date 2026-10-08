@@ -26,8 +26,8 @@ function Sidebar() {
     { name: 'Meetings', path: '/meetings', icon: Video },
     { name: 'Messages', path: '/messages', icon: MessageSquare },
     { name: 'Notifications', path: '/notifications', icon: Bell },
-    { name: 'Monitoring', path: '/monitoring', icon: BarChart3 },
-    { name: 'Reports', path: '/reports', icon: BarChart3 },
+    { name: 'Monitoring', path: '/monitoring', icon: BarChart3, roles: ['admin', 'project_manager'] },
+    { name: 'Reports', path: '/reports', icon: BarChart3, roles: ['admin', 'project_manager'] },
     { name: 'Users', path: '/users', icon: Users, roles: ['admin', 'project_manager'] },
   ];
 
